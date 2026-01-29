@@ -42,13 +42,64 @@
   </script>
   
   <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // Hook to get responsive carousel dimensions based on viewport
+    const useCarouselDimensions = () => {
+      const [dimensions, setDimensions] = useState(() => calculateDimensions());
+
+      function calculateDimensions() {
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        
+        // Base dimensions scale with viewport
+        // On mobile (< 768px): smaller items
+        // On tablet (768-1024px): medium items
+        // On desktop (> 1024px): larger items
+        let itemWidth, itemHeight, carouselRadius;
+        
+        if (vw < 768) {
+          // Mobile
+          itemWidth = Math.min(vw * 0.6, 250);
+          itemHeight = itemWidth * 1.33;
+          carouselRadius = Math.min(vw * 0.5, 300);
+        } else if (vw < 1200) {
+          // Tablet
+          itemWidth = Math.min(vw * 0.35, 400);
+          itemHeight = itemWidth * 1.33;
+          carouselRadius = Math.min(vw * 0.4, 500);
+        } else {
+          // Desktop - scale with viewport, larger sizes
+          itemWidth = Math.min(vw * 0.28, 500);
+          itemHeight = itemWidth * 1.33;
+          carouselRadius = Math.min(vw * 0.35, 650);
+        }
+        
+        return {
+          itemWidth: Math.round(itemWidth),
+          itemHeight: Math.round(itemHeight),
+          carouselRadius: Math.round(carouselRadius)
+        };
+      }
+
+      useEffect(() => {
+        const handleResize = () => {
+          setDimensions(calculateDimensions());
+        };
+
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+      }, []);
+
+      return dimensions;
+    };
 
     // 3D Model Viewer Component - rotation driven by carousel angle so volume is visible
-    const Model3DViewer = ({ modelPath, isActive, carouselAngle }) => {
+    const Model3DViewer = ({ modelPath, isActive, carouselAngle, width, height }) => {
       const containerRef = useRef(null);
       const sceneRef = useRef(null);
       const rendererRef = useRef(null);
+      const cameraRef = useRef(null);
       const modelRef = useRef(null);
       const frameRef = useRef(null);
       const carouselAngleRef = useRef(carouselAngle);
@@ -56,6 +107,15 @@
 
       carouselAngleRef.current = carouselAngle;
       isActiveRef.current = isActive;
+
+      // Handle resize
+      useEffect(() => {
+        if (rendererRef.current && cameraRef.current) {
+          rendererRef.current.setSize(width, height);
+          cameraRef.current.aspect = width / height;
+          cameraRef.current.updateProjectionMatrix();
+        }
+      }, [width, height]);
 
       useEffect(() => {
         if (!containerRef.current || !window.THREE) return;
@@ -67,14 +127,12 @@
         const scene = new THREE.Scene();
         sceneRef.current = scene;
 
-        // Renderer - size matches carousel item for crisp 3D (no CSS scaling)
-        const width = 300;
-        const height = 400;
-
         // Camera - wider FOV for stronger 3D depth, aspect matches renderer
         const camera = new THREE.PerspectiveCamera(55, width/height, 0.1, 1000);
         camera.position.set(0, 1.2, 5.5);
         camera.lookAt(0, 0.5, 0);
+        cameraRef.current = camera;
+        
         const renderer = new THREE.WebGLRenderer({ 
           antialias: true, 
           alpha: true 
@@ -163,7 +221,7 @@
             rendererRef.current.dispose();
           }
         };
-      }, [modelPath]);
+      }, [modelPath, width, height]);
 
       return (
         <div 
@@ -195,24 +253,27 @@
       }
     };
 
-    const CarouselItem = ({ item, index, theta, totalItems, onClick, isActive }) => {
+    const CarouselItem = ({ item, index, theta, totalItems, onClick, isActive, itemWidth, itemHeight, carouselRadius }) => {
       const angle = (360 / totalItems) * index;
       
+      // Scale shape dimensions based on item size
+      const shapeScale = itemWidth / 300;
+      
       const shapeStyles = {
-        'item-1': { borderRadius: '50%', width: '180px', height: '180px' },
-        'item-2': { borderRadius: '20px', width: '160px', height: '200px' },
+        'item-1': { borderRadius: '50%', width: `${180 * shapeScale}px`, height: `${180 * shapeScale}px` },
+        'item-2': { borderRadius: '20px', width: `${160 * shapeScale}px`, height: `${200 * shapeScale}px` },
         'item-3': { 
           clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)', 
           background: 'linear-gradient(to bottom, #fff, #ddd)',
-          width: '180px',
-          height: '200px',
+          width: `${180 * shapeScale}px`,
+          height: `${200 * shapeScale}px`,
           borderRadius: '0'
         },
         'item-4': { 
-          width: '160px', 
-          height: '160px', 
+          width: `${160 * shapeScale}px`, 
+          height: `${160 * shapeScale}px`, 
           borderRadius: '50%', 
-          border: '25px solid #fff', 
+          border: `${25 * shapeScale}px solid #fff`, 
           background: 'transparent', 
           boxShadow: 'none'
         },
@@ -227,8 +288,8 @@
             position: 'absolute',
             left: '50%',
             top: '50%',
-            width: '300px',
-            height: '400px',
+            width: `${itemWidth}px`,
+            height: `${itemHeight}px`,
             background: 'transparent',
             border: 'none',
             display: 'flex',
@@ -237,7 +298,7 @@
             opacity: isActive ? 1 : 0.5,
             transition: 'opacity 0.5s, transform 0.5s var(--easing)',
             cursor: 'pointer',
-            transform: `translate(-50%, -50%) rotateY(${angle}deg) translateZ(400px)`,
+            transform: `translate(-50%, -50%) rotateY(${angle}deg) translateZ(${carouselRadius}px)`,
             zIndex: isActive ? 100 : 1,
             pointerEvents: 'auto',
             transformStyle: 'preserve-3d'
@@ -257,6 +318,8 @@
                 modelPath={item.modelPath}
                 isActive={isActive}
                 carouselAngle={theta + angle}
+                width={itemWidth}
+                height={itemHeight}
               />
             ) : (
               <div className="shape-wrapper" style={{
@@ -265,10 +328,10 @@
                 transition: 'transform 0.5s var(--easing)'
               }}>
                 <div className="geo-shape" style={{
-                  width: '150px',
-                  height: '220px',
+                  width: `${150 * shapeScale}px`,
+                  height: `${220 * shapeScale}px`,
                   background: 'radial-gradient(circle at 30% 30%, #ffffff, #dcdcdc 60%, #a0a0a0 100%)',
-                  borderRadius: '60px',
+                  borderRadius: `${60 * shapeScale}px`,
                   position: 'relative',
                   boxShadow: isActive 
                     ? '0 20px 60px rgba(0,0,0,0.6), 0 0 40px rgba(184, 255, 56, 0.2)' 
@@ -282,7 +345,7 @@
                     content: '""',
                     position: 'absolute',
                     inset: 0,
-                    borderRadius: item.class === 'item-4' ? '50%' : (item.class === 'item-1' ? '50%' : (item.class === 'item-2' ? '10px' : '60px')),
+                    borderRadius: item.class === 'item-4' ? '50%' : (item.class === 'item-1' ? '50%' : (item.class === 'item-2' ? '10px' : `${60 * shapeScale}px`)),
                     boxShadow: item.class === 'item-4' ? 'none' : 'inset -5px -5px 20px rgba(0,0,0,0.2), inset 2px 2px 10px rgba(255,255,255,1)'
                   }}></div>
                 </div>
@@ -294,91 +357,59 @@
     };
 
     const HomePage = () => {
-      // Default items (used if localStorage is empty)
-      const mccreeModelPath = "3DModels/McCree/scene.gltf";
+      // Get responsive carousel dimensions
+      const { itemWidth, itemHeight, carouselRadius } = useCarouselDimensions();
+      
+      // Carousel items data
       const defaultData = [
         {
-          name: "The Observer",
-          desc: "A conceptual entity designed for architectural visualization. Features perfectly diffused reflection maps.",
-          poly: "24k",
-          mat: "Porcelain",
-          rig: "Humanoid",
-          class: "item-3d",
-          modelPath: mccreeModelPath
-        },
-        {
-          name: "Monolith v2",
-          desc: "Brutalist geometry meets organic motion. Designed for heavy industrial scapes and tech-noir environments.",
-          poly: "12k",
-          mat: "Obsidian",
-          rig: "Static",
-          class: "item-3d",
-          modelPath: mccreeModelPath
-        },
-        {
-          name: "Prism Walker",
-          desc: "Low-poly abstraction with high-fidelity refraction shaders. Ideal for background crowd simulation.",
-          poly: "4k",
-          mat: "Glass",
-          rig: "Bipedal",
-          class: "item-3d",
-          modelPath: mccreeModelPath
-        },
-        {
-          name: "Loop Entity",
-          desc: "Infinite recursion topology. A mathematical curiosity rendered in high-impact matte white.",
-          poly: "68k",
-          mat: "Ceramic",
-          rig: "Soft Body",
-          class: "item-3d",
-          modelPath: mccreeModelPath
-        },
-        {
-          name: "Apex Form",
-          desc: "The pinnacle of the collection. A seamless blend of hard surface modeling and cloth simulation.",
-          poly: "45k",
-          mat: "Polymer",
-          rig: "Custom",
-          class: "item-3d",
-          modelPath: mccreeModelPath
-        },
-        {
-          name: "Null Object",
-          desc: "Base mesh for rapid prototyping. Clean topology and UV unwrapped for instant texture application.",
-          poly: "2k",
-          mat: "Greybox",
-          rig: "None",
-          class: "item-3d",
-          modelPath: mccreeModelPath
-        },
-        {
           name: "McCree",
-          desc: "Low-poly character model from the Overwatch universe. Stylized cowboy gunslinger with detailed texturing.",
+          desc: "Legendary gunslinger from the Overwatch universe. A stylized cowboy character with detailed texturing and dynamic pose.",
           poly: "8k",
           mat: "Stylized PBR",
           rig: "Humanoid",
           class: "item-3d",
-          modelPath: mccreeModelPath
+          modelPath: "3DModels/McCree/scene.gltf"
+        },
+        {
+          name: "Sekiro",
+          desc: "The one-armed wolf from Sengoku-era Japan. A shinobi warrior featuring intricate armor and prosthetic arm details.",
+          poly: "12k",
+          mat: "PBR Metal",
+          rig: "Humanoid",
+          class: "item-3d",
+          modelPath: "3DModels/Sekiro/scene.gltf"
+        },
+        {
+          name: "Lara Croft",
+          desc: "The iconic tomb raider explorer. Athletic adventurer with realistic textures and equipment details.",
+          poly: "15k",
+          mat: "Realistic PBR",
+          rig: "Humanoid",
+          class: "item-3d",
+          modelPath: "3DModels/Lara/scene.gltf"
+        },
+        {
+          name: "Aya",
+          desc: "Ancient Egyptian warrior from the Assassin's Creed universe. Features detailed period-accurate armor and weapons.",
+          poly: "10k",
+          mat: "Historical PBR",
+          rig: "Humanoid",
+          class: "item-3d",
+          modelPath: "3DModels/Aya/scene.gltf"
+        },
+        {
+          name: "Goose",
+          desc: "The mischievous waterfowl from Untitled Goose Game. A low-poly stylized character with charm and personality.",
+          poly: "2k",
+          mat: "Toon Shader",
+          rig: "Avian",
+          class: "item-3d",
+          modelPath: "3DModels/Goose/scene.gltf"
         }
       ];
 
-      // Load from localStorage if available (managed by CMS), otherwise use defaults
-      const getCarouselData = () => {
-        try {
-          const saved = localStorage.getItem('carouselItems');
-          if (saved) {
-            const items = JSON.parse(saved);
-            // Add class: 'item-3d' to each item for compatibility
-            return items.map(item => ({ ...item, class: 'item-3d' }));
-          }
-        } catch (e) {
-          console.warn('Failed to load carousel items from localStorage:', e);
-        }
-        return defaultData;
-      };
-
-      const data = getCarouselData();
-
+      const [data, setData] = useState(defaultData);
       const [theta, setTheta] = useState(0);
       const [selectedIndex, setSelectedIndex] = useState(0);
       const [sceneTransform, setSceneTransform] = useState('rotateX(-5deg) rotateZ(-5deg)');
@@ -485,7 +516,7 @@
                 width: '100%',
                 height: '100%',
                 transformStyle: 'preserve-3d',
-                transform: `translateZ(-400px) rotateY(${theta}deg)`,
+                transform: `translateZ(-${carouselRadius}px) rotateY(${theta}deg)`,
                 transition: 'transform 0.8s var(--easing)',
                 display: 'flex',
                 alignItems: 'center',
@@ -500,6 +531,9 @@
                     totalItems={data.length}
                     onClick={() => handleItemClick(idx)}
                     isActive={idx === getActiveIndex()}
+                    itemWidth={itemWidth}
+                    itemHeight={itemHeight}
+                    carouselRadius={carouselRadius}
                   />
                 ))}
               </div>
@@ -507,14 +541,16 @@
 
             <header style={{
               position: 'absolute',
-              top: '2rem',
-              left: '3rem',
-              right: '3rem',
+              top: 'clamp(1rem, 2vw, 2rem)',
+              left: 'clamp(1rem, 3vw, 3rem)',
+              right: 'clamp(1rem, 3vw, 3rem)',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
               zIndex: 100,
-              pointerEvents: 'auto'
+              pointerEvents: 'auto',
+              flexWrap: 'wrap',
+              gap: '1rem'
             }}>
               <a href="/" style={{ display: 'flex', alignItems: 'center' }}>
                 <svg width="156" height="24" viewBox="0 0 156 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -557,29 +593,20 @@
                   transition: 'color 0.3s',
                   position: 'relative'
                 }}>About</a>
-                <a href="cms.html" className="nav-link" style={{
-                  textDecoration: 'none',
-                  color: 'var(--lime, #B8FF38)',
-                  fontSize: '0.8rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.1em',
-                  transition: 'color 0.3s',
-                  position: 'relative',
-                  fontWeight: 500
-                }}>CMS</a>
               </nav>
             </header>
 
             <div className="details-panel" style={{
               pointerEvents: 'auto',
-              width: '350px',
+              width: 'min(350px, calc(100vw - 2rem))',
+              maxWidth: '350px',
               background: 'rgba(10, 10, 10, 0.6)',
               backdropFilter: 'blur(10px)',
               border: '1px solid rgba(255, 255, 255, 0.1)',
-              padding: '2rem',
+              padding: 'clamp(1rem, 3vw, 2rem)',
               position: 'absolute',
-              left: '3rem',
-              bottom: '3rem',
+              left: 'clamp(1rem, 3vw, 3rem)',
+              bottom: 'clamp(1rem, 3vw, 3rem)',
               transformStyle: 'preserve-3d',
               transition: 'border-color 0.5s var(--easing), opacity 0.2s',
               opacity: panelOpacity
@@ -683,10 +710,10 @@
 
             <div className="controls" style={{
               position: 'absolute',
-              bottom: '3rem',
-              right: '3rem',
+              bottom: 'clamp(1rem, 3vw, 3rem)',
+              right: 'clamp(1rem, 3vw, 3rem)',
               display: 'flex',
-              gap: '1rem',
+              gap: '0.75rem',
               pointerEvents: 'auto'
             }}>
               <button 
