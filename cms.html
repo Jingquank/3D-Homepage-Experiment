@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Carousel CMS - VIGGLE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #030303;
+      color: #fff;
+      font-family: 'Prompt', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+    }
+
+    :root {
+      --void: #030303;
+      --lime: #B8FF38;
+      --lime-dark: #283E00;
+      --glass: rgba(255, 255, 255, 0.05);
+      --glass-border: rgba(255, 255, 255, 0.1);
+      --text-muted: rgba(255, 255, 255, 0.6);
+      --easing: cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    /* Scrollbar styling */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--void);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // Default carousel items
+    const defaultItems = [
+      {
+        id: 1,
+        name: "The Observer",
+        desc: "A conceptual entity designed for architectural visualization. Features perfectly diffused reflection maps.",
+        poly: "24k",
+        mat: "Porcelain",
+        rig: "Humanoid",
+        modelPath: "3DModels/McCree/scene.gltf"
+      },
+      {
+        id: 2,
+        name: "Monolith v2",
+        desc: "Brutalist geometry meets organic motion. Designed for heavy industrial scapes and tech-noir environments.",
+        poly: "12k",
+        mat: "Obsidian",
+        rig: "Static",
+        modelPath: "3DModels/McCree/scene.gltf"
+      },
+      {
+        id: 3,
+        name: "Prism Walker",
+        desc: "Low-poly abstraction with high-fidelity refraction shaders. Ideal for background crowd simulation.",
+        poly: "4k",
+        mat: "Glass",
+        rig: "Bipedal",
+        modelPath: "3DModels/McCree/scene.gltf"
+      },
+      {
+        id: 4,
+        name: "Loop Entity",
+        desc: "Infinite recursion topology. A mathematical curiosity rendered in high-impact matte white.",
+        poly: "68k",
+        mat: "Ceramic",
+        rig: "Soft Body",
+        modelPath: "3DModels/McCree/scene.gltf"
+      },
+      {
+        id: 5,
+        name: "Apex Form",
+        desc: "The pinnacle of the collection. A seamless blend of hard surface modeling and cloth simulation.",
+        poly: "45k",
+        mat: "Polymer",
+        rig: "Custom",
+        modelPath: "3DModels/McCree/scene.gltf"
+      },
+      {
+        id: 6,
+        name: "Null Object",
+        desc: "Base mesh for rapid prototyping. Clean topology and UV unwrapped for instant texture application.",
+        poly: "2k",
+        mat: "Greybox",
+        rig: "None",
+        modelPath: "3DModels/McCree/scene.gltf"
+      },
+      {
+        id: 7,
+        name: "McCree",
+        desc: "Low-poly character model from the Overwatch universe. Stylized cowboy gunslinger with detailed texturing.",
+        poly: "8k",
+        mat: "Stylized PBR",
+        rig: "Humanoid",
+        modelPath: "3DModels/McCree/scene.gltf"
+      }
+    ];
+
+    // Toast notification component
+    const Toast = ({ message, type, onClose }) => {
+      useEffect(() => {
+        const timer = setTimeout(onClose, 3000);
+        return () => clearTimeout(timer);
+      }, [onClose]);
+
+      return (
+        <div style={{
+          position: 'fixed',
+          bottom: '2rem',
+          right: '2rem',
+          padding: '1rem 1.5rem',
+          background: type === 'success' ? 'var(--lime)' : '#ff4444',
+          color: type === 'success' ? 'var(--lime-dark)' : '#fff',
+          borderRadius: '8px',
+          fontWeight: 500,
+          boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
+          zIndex: 1000,
+          animation: 'slideIn 0.3s var(--easing)'
+        }}>
+          {message}
+        </div>
+      );
+    };
+
+    // Item card component
+    const ItemCard = ({ item, onUpdate, onDelete, index }) => {
+      const [isEditing, setIsEditing] = useState(false);
+      const [editData, setEditData] = useState({ ...item });
+
+      const handleSave = () => {
+        onUpdate(item.id, editData);
+        setIsEditing(false);
+      };
+
+      const handleCancel = () => {
+        setEditData({ ...item });
+        setIsEditing(false);
+      };
+
+      const handleFileChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          // In a real app, you'd upload this to a server
+          // For demo, we'll just store the filename
+          const path = `3DModels/${file.name.replace('.gltf', '').replace('.glb', '')}/${file.name}`;
+          setEditData({ ...editData, modelPath: path });
+        }
+      };
+
+      return (
+        <div style={{
+          background: 'var(--glass)',
+          border: '1px solid var(--glass-border)',
+          borderRadius: '12px',
+          padding: '1.5rem',
+          transition: 'all 0.3s var(--easing)',
+          position: 'relative'
+        }}>
+          {/* Item number badge */}
+          <div style={{
+            position: 'absolute',
+            top: '-10px',
+            left: '1rem',
+            background: 'var(--lime)',
+            color: 'var(--lime-dark)',
+            padding: '0.25rem 0.75rem',
+            borderRadius: '20px',
+            fontSize: '0.7rem',
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em'
+          }}>
+            Item {index + 1}
+          </div>
+
+          {isEditing ? (
+            // Edit mode
+            <div style={{ marginTop: '0.5rem' }}>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '0.7rem',
+                  color: 'var(--text-muted)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  marginBottom: '0.5rem'
+                }}>Name</label>
+                <input
+                  type="text"
+                  value={editData.name}
+                  onChange={(e) => setEditData({ ...editData, name: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem 1rem',
+                    background: 'rgba(0,0,0,0.3)',
+                    border: '1px solid var(--glass-border)',
+                    borderRadius: '8px',
+                    color: '#fff',
+                    fontSize: '1rem',
+                    fontFamily: 'inherit',
+                    outline: 'none',
+                    transition: 'border-color 0.3s'
+                  }}
+                  onFocus={(e) => e.target.style.borderColor = 'var(--lime)'}
+                  onBlur={(e) => e.target.style.borderColor = 'var(--glass-border)'}
+                />
+              </div>
+
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '0.7rem',
+                  color: 'var(--text-muted)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  marginBottom: '0.5rem'
+                }}>Description</label>
+                <textarea
+                  value={editData.desc}
+                  onChange={(e) => setEditData({ ...editData, desc: e.target.value })}
+                  rows={3}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem 1rem',
+                    background: 'rgba(0,0,0,0.3)',
+                    border: '1px solid var(--glass-border)',
+                    borderRadius: '8px',
+                    color: '#fff',
+                    fontSize: '0.9rem',
+                    fontFamily: 'inherit',
+                    outline: 'none',
+                    resize: 'vertical',
+                    transition: 'border-color 0.3s'
+                  }}
+                  onFocus={(e) => e.target.style.borderColor = 'var(--lime)'}
+                  onBlur={(e) => e.target.style.borderColor = 'var(--glass-border)'}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                <div>
+                  <label style={{
+                    display: 'block',
+                    fontSize: '0.7rem',
+                    color: 'var(--text-muted)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    marginBottom: '0.5rem'
+                  }}>Poly Count</label>
+                  <input
+                    type="text"
+                    value={editData.poly}
+                    onChange={(e) => setEditData({ ...editData, poly: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem 0.75rem',
+                      background: 'rgba(0,0,0,0.3)',
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '0.9rem',
+                      fontFamily: 'inherit',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{
+                    display: 'block',
+                    fontSize: '0.7rem',
+                    color: 'var(--text-muted)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    marginBottom: '0.5rem'
+                  }}>Material</label>
+                  <input
+                    type="text"
+                    value={editData.mat}
+                    onChange={(e) => setEditData({ ...editData, mat: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem 0.75rem',
+                      background: 'rgba(0,0,0,0.3)',
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '0.9rem',
+                      fontFamily: 'inherit',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{
+                    display: 'block',
+                    fontSize: '0.7rem',
+                    color: 'var(--text-muted)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    marginBottom: '0.5rem'
+                  }}>Rigging</label>
+                  <input
+                    type="text"
+                    value={editData.rig}
+                    onChange={(e) => setEditData({ ...editData, rig: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem 0.75rem',
+                      background: 'rgba(0,0,0,0.3)',
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '0.9rem',
+                      fontFamily: 'inherit',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{
+                  display: 'block',
+                  fontSize: '0.7rem',
+                  color: 'var(--text-muted)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  marginBottom: '0.5rem'
+                }}>3D Model</label>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '1rem'
+                }}>
+                  <input
+                    type="text"
+                    value={editData.modelPath}
+                    onChange={(e) => setEditData({ ...editData, modelPath: e.target.value })}
+                    style={{
+                      flex: 1,
+                      padding: '0.5rem 0.75rem',
+                      background: 'rgba(0,0,0,0.3)',
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: '6px',
+                      color: '#fff',
+                      fontSize: '0.85rem',
+                      fontFamily: 'monospace',
+                      outline: 'none'
+                    }}
+                  />
+                  <label style={{
+                    padding: '0.5rem 1rem',
+                    background: 'transparent',
+                    border: '1px solid var(--glass-border)',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s',
+                    whiteSpace: 'nowrap'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.borderColor = 'var(--lime)';
+                    e.target.style.color = 'var(--lime)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.borderColor = 'var(--glass-border)';
+                    e.target.style.color = '#fff';
+                  }}
+                  >
+                    Upload .gltf
+                    <input
+                      type="file"
+                      accept=".gltf,.glb"
+                      onChange={handleFileChange}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button
+                  onClick={handleSave}
+                  style={{
+                    flex: 1,
+                    padding: '0.75rem 1.5rem',
+                    background: 'var(--lime)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: 'var(--lime-dark)',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s var(--easing)'
+                  }}
+                >
+                  Save Changes
+                </button>
+                <button
+                  onClick={handleCancel}
+                  style={{
+                    padding: '0.75rem 1.5rem',
+                    background: 'transparent',
+                    border: '1px solid var(--glass-border)',
+                    borderRadius: '8px',
+                    color: '#fff',
+                    fontSize: '0.85rem',
+                    fontWeight: 500,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s var(--easing)'
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            // View mode
+            <div style={{ marginTop: '0.5rem' }}>
+              <h3 style={{
+                fontSize: '1.25rem',
+                fontWeight: 500,
+                marginBottom: '0.5rem'
+              }}>{item.name}</h3>
+              <p style={{
+                fontSize: '0.85rem',
+                color: 'var(--text-muted)',
+                lineHeight: 1.6,
+                marginBottom: '1rem'
+              }}>{item.desc}</p>
+
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: '0.75rem',
+                marginBottom: '1rem',
+                padding: '0.75rem',
+                background: 'rgba(0,0,0,0.2)',
+                borderRadius: '8px'
+              }}>
+                <div>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Polys</div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 500 }}>{item.poly}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Material</div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 500 }}>{item.mat}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Rigging</div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 500 }}>{item.rig}</div>
+                </div>
+              </div>
+
+              <div style={{
+                fontSize: '0.75rem',
+                color: 'var(--text-muted)',
+                fontFamily: 'monospace',
+                padding: '0.5rem 0.75rem',
+                background: 'rgba(0,0,0,0.2)',
+                borderRadius: '6px',
+                marginBottom: '1rem',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}>
+                {item.modelPath}
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button
+                  onClick={() => setIsEditing(true)}
+                  style={{
+                    flex: 1,
+                    padding: '0.6rem 1rem',
+                    background: 'transparent',
+                    border: '1px solid var(--lime)',
+                    borderRadius: '6px',
+                    color: 'var(--lime)',
+                    fontSize: '0.8rem',
+                    fontWeight: 500,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s var(--easing)'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.background = 'var(--lime)';
+                    e.target.style.color = 'var(--lime-dark)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.background = 'transparent';
+                    e.target.style.color = 'var(--lime)';
+                  }}
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => onDelete(item.id)}
+                  style={{
+                    padding: '0.6rem 1rem',
+                    background: 'transparent',
+                    border: '1px solid rgba(255,100,100,0.5)',
+                    borderRadius: '6px',
+                    color: 'rgba(255,100,100,0.8)',
+                    fontSize: '0.8rem',
+                    fontWeight: 500,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s var(--easing)'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.background = 'rgba(255,100,100,0.2)';
+                    e.target.style.borderColor = 'rgba(255,100,100,0.8)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.background = 'transparent';
+                    e.target.style.borderColor = 'rgba(255,100,100,0.5)';
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    // Main CMS App
+    const CMSApp = () => {
+      const [items, setItems] = useState([]);
+      const [toast, setToast] = useState(null);
+
+      // Load items from localStorage on mount
+      useEffect(() => {
+        const saved = localStorage.getItem('carouselItems');
+        if (saved) {
+          setItems(JSON.parse(saved));
+        } else {
+          setItems(defaultItems);
+          localStorage.setItem('carouselItems', JSON.stringify(defaultItems));
+        }
+      }, []);
+
+      // Save to localStorage whenever items change
+      const saveItems = (newItems) => {
+        setItems(newItems);
+        localStorage.setItem('carouselItems', JSON.stringify(newItems));
+      };
+
+      const handleUpdate = (id, data) => {
+        const newItems = items.map(item => 
+          item.id === id ? { ...item, ...data } : item
+        );
+        saveItems(newItems);
+        setToast({ message: 'Item updated successfully!', type: 'success' });
+      };
+
+      const handleDelete = (id) => {
+        if (items.length <= 1) {
+          setToast({ message: 'Cannot delete the last item', type: 'error' });
+          return;
+        }
+        const newItems = items.filter(item => item.id !== id);
+        saveItems(newItems);
+        setToast({ message: 'Item deleted', type: 'success' });
+      };
+
+      const handleAddNew = () => {
+        const newId = Math.max(...items.map(i => i.id), 0) + 1;
+        const newItem = {
+          id: newId,
+          name: "New Item",
+          desc: "Enter a description for this item.",
+          poly: "0k",
+          mat: "Unknown",
+          rig: "None",
+          modelPath: "3DModels/McCree/scene.gltf"
+        };
+        saveItems([...items, newItem]);
+        setToast({ message: 'New item added!', type: 'success' });
+      };
+
+      const handleReset = () => {
+        if (confirm('Reset all items to defaults? This cannot be undone.')) {
+          saveItems(defaultItems);
+          setToast({ message: 'Items reset to defaults', type: 'success' });
+        }
+      };
+
+      return (
+        <div style={{ minHeight: '100vh', background: 'var(--void)' }}>
+          {/* Header */}
+          <header style={{
+            padding: '1.5rem 3rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            borderBottom: '1px solid var(--glass-border)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
+              <a href="react-app.html" style={{ display: 'flex', alignItems: 'center' }}>
+                <svg width="120" height="18" viewBox="0 0 156 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M9.93363 0C10.1479 2.50039e-06 10.3421 0.12272 10.4287 0.3125L13.544 7.13281C13.7341 7.54907 14.3432 7.54907 14.5332 7.13281L17.6485 0.3125C17.7351 0.122718 17.9293 0 18.1436 0H27.1377C27.5207 8.74289e-05 27.782 0.374478 27.6397 0.71875L18.1455 23.6709C18.0632 23.8696 17.8647 23.9999 17.6436 24H10.4336C10.2125 24 10.014 23.8696 9.93167 23.6709L0.437533 0.71875C0.29523 0.37446 0.556512 5.78647e-05 0.939486 0H9.93363ZM38.5655 0C38.8644 0 39.1075 0.234912 39.1075 0.524414V23.4756C39.1075 23.7651 38.8644 24 38.5655 24H29.2149C28.9161 23.9998 28.6739 23.7649 28.6739 23.4756V0.524414C28.6739 0.235058 28.9161 0.000236908 29.2149 0H38.5655ZM101.152 0C101.451 0.000189651 101.693 0.235029 101.693 0.524414V14.0225C101.694 14.3118 101.936 14.5468 102.234 14.5469L107.699 13.5518C108.008 13.5224 108.241 13.7867 108.241 14.0762V23.4756C108.241 23.7651 107.998 24 107.699 24H91.125C90.8261 24 90.584 23.7651 90.584 23.4756V0.524414C90.584 0.234912 90.8261 -8.40768e-10 91.125 0H101.152ZM127.459 0C127.758 0.000202487 128 0.235037 128 0.524414V6.57031C128 6.85969 127.758 7.09452 127.459 7.09473H118.578C118.279 7.09473 118.037 7.32964 118.037 7.61914V8.14062C118.037 8.43013 118.279 8.66504 118.578 8.66504H125.904C126.203 8.66504 126.445 8.89995 126.445 9.18945V14.8105C126.445 15.1 126.203 15.335 125.904 15.335H118.578C118.279 15.335 118.037 15.5699 118.037 15.8594V16.3809C118.037 16.6704 118.279 16.9053 118.578 16.9053H127.459C127.758 16.9055 128 17.1403 128 17.4297V23.4756C128 23.765 127.758 23.9998 127.459 24H110.175C109.876 24 109.634 23.7651 109.634 23.4756V0.524414C109.634 0.234912 109.876 0 110.175 0H127.459ZM62.1836 0.0146484C62.623 0.0146843 62.9795 0.371252 62.9795 0.810547V6.88965C62.9795 7.32894 62.623 7.68551 62.1836 7.68555H49.6641C49.2248 7.68555 48.8683 8.04127 48.8682 8.48047V13.4561C48.8682 13.8954 49.2247 14.252 49.6641 14.252H52.7285C53.1678 14.2518 53.5235 13.8953 53.5235 13.4561V9.44824C53.5237 8.96103 53.9587 8.58818 54.4405 8.66211L63.4746 10.0488C63.8627 10.1086 64.1494 10.4424 64.1494 10.835V23.1895C64.1494 23.6288 63.793 23.9853 63.3535 23.9854H41.295C40.8556 23.9853 40.4991 23.6287 40.4991 23.1895V0.810547C40.4991 0.37127 40.8556 0.0147147 41.295 0.0146484H62.1836ZM87.2256 0.0146484C87.665 0.0146534 88.0215 0.371233 88.0215 0.810547V6.88965C88.0215 7.32896 87.665 7.68554 87.2256 7.68555H74.7061C74.2668 7.68555 73.9103 8.04127 73.9102 8.48047V13.4561C73.9102 13.8954 74.2667 14.252 74.7061 14.252H77.7705C78.2099 14.2518 78.5664 13.8953 78.5664 13.4561V9.44824C78.5667 8.96103 79.0007 8.58818 79.4825 8.66211L88.5166 10.0488C88.9047 10.1086 89.1914 10.4424 89.1914 10.835V23.1895C89.1914 23.6288 88.835 23.9854 88.3955 23.9854H66.3369C65.8976 23.9853 65.541 23.6287 65.541 23.1895V0.810547C65.541 0.371289 65.8976 0.0147456 66.3369 0.0146484H87.2256Z" fill="#FAFAFA"/>
+                  <path d="M132 12C132 5.37258 137.373 0 144 0C150.627 0 156 5.37258 156 12V20.6156C156 22.4848 154.485 24 152.616 24H135.384C133.515 24 132 22.4848 132 20.6156V12Z" fill="#A0F900"/>
+                  <path d="M141.162 12.9135L141.568 13.5334C142.119 14.3731 141.164 15.3834 140.294 14.8814C138.312 13.7372 137.633 11.2028 138.778 9.2208C139.278 8.35348 140.606 8.74643 140.555 9.74657L140.514 10.5209C140.471 11.367 140.697 12.205 141.162 12.9135Z" fill="#283E00"/>
+                  <path d="M137.043 14.0044L137.442 14.6203C137.983 15.4546 137.032 16.4669 136.173 15.971C134.215 14.8407 133.555 12.3176 134.7 10.3356C135.201 9.4683 136.514 9.85305 136.458 10.8504L136.414 11.6226C136.366 12.4663 136.586 13.3006 137.043 14.0044Z" fill="#283E00"/>
+                  <path d="M140.977 17.0523L139.508 17.797C137.518 18.8057 138.232 21.8238 140.461 21.8238C145.54 21.8238 149.658 17.6833 149.658 12.5758C149.658 10.3408 146.669 9.61819 145.659 11.609L144.877 13.1504C144.022 14.8345 142.656 16.2012 140.977 17.0523Z" fill="#283E00"/>
+                  <path d="M146.527 12.4362C147.278 12.8696 147.535 13.8295 147.102 14.5802C146.668 15.3309 145.708 15.5881 144.958 15.1547L143.968 14.5834C144.314 14.1382 144.618 13.6588 144.876 13.1504L145.531 11.861L146.527 12.4362Z" fill="#FAFAFA"/>
+                </svg>
+              </a>
+              <div style={{
+                fontSize: '0.8rem',
+                color: 'var(--text-muted)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.1em',
+                paddingLeft: '2rem',
+                borderLeft: '1px solid var(--glass-border)'
+              }}>
+                Content Manager
+              </div>
+            </div>
+            <a 
+              href="react-app.html"
+              style={{
+                padding: '0.6rem 1.25rem',
+                background: 'transparent',
+                border: '1px solid var(--glass-border)',
+                borderRadius: '6px',
+                color: '#fff',
+                fontSize: '0.8rem',
+                textDecoration: 'none',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                transition: 'all 0.3s var(--easing)'
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.borderColor = 'var(--lime)';
+                e.target.style.color = 'var(--lime)';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.borderColor = 'var(--glass-border)';
+                e.target.style.color = '#fff';
+              }}
+            >
+              View Carousel
+            </a>
+          </header>
+
+          {/* Main content */}
+          <main style={{ padding: '2rem 3rem', maxWidth: '1400px', margin: '0 auto' }}>
+            {/* Title and actions */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '2rem'
+            }}>
+              <div>
+                <h1 style={{
+                  fontSize: '1.75rem',
+                  fontWeight: 400,
+                  marginBottom: '0.5rem'
+                }}>Carousel Items</h1>
+                <p style={{
+                  fontSize: '0.9rem',
+                  color: 'var(--text-muted)'
+                }}>Manage the 3D models displayed in the carousel</p>
+              </div>
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button
+                  onClick={handleReset}
+                  style={{
+                    padding: '0.75rem 1.25rem',
+                    background: 'transparent',
+                    border: '1px solid var(--glass-border)',
+                    borderRadius: '8px',
+                    color: 'var(--text-muted)',
+                    fontSize: '0.8rem',
+                    fontWeight: 500,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s var(--easing)'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.borderColor = '#fff';
+                    e.target.style.color = '#fff';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.borderColor = 'var(--glass-border)';
+                    e.target.style.color = 'var(--text-muted)';
+                  }}
+                >
+                  Reset to Defaults
+                </button>
+                <button
+                  onClick={handleAddNew}
+                  style={{
+                    padding: '0.75rem 1.5rem',
+                    background: 'var(--lime)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: 'var(--lime-dark)',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s var(--easing)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.transform = 'translateY(-2px)';
+                    e.target.style.boxShadow = '0 10px 30px rgba(184, 255, 56, 0.3)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.transform = 'translateY(0)';
+                    e.target.style.boxShadow = 'none';
+                  }}
+                >
+                  <span style={{ fontSize: '1.1rem' }}>+</span>
+                  Add Item
+                </button>
+              </div>
+            </div>
+
+            {/* Items grid */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))',
+              gap: '1.5rem'
+            }}>
+              {items.map((item, index) => (
+                <ItemCard
+                  key={item.id}
+                  item={item}
+                  index={index}
+                  onUpdate={handleUpdate}
+                  onDelete={handleDelete}
+                />
+              ))}
+            </div>
+
+            {/* Info note */}
+            <div style={{
+              marginTop: '3rem',
+              padding: '1.5rem',
+              background: 'var(--glass)',
+              border: '1px solid var(--glass-border)',
+              borderRadius: '12px',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '1rem'
+            }}>
+              <div style={{
+                width: '24px',
+                height: '24px',
+                borderRadius: '50%',
+                background: 'var(--lime)',
+                color: 'var(--lime-dark)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                flexShrink: 0
+              }}>i</div>
+              <div>
+                <h4 style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '0.5rem' }}>
+                  How it works
+                </h4>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                  Changes are saved to your browser's local storage and will persist across sessions. 
+                  To use a custom 3D model, place your .gltf file in the 3DModels folder and update the path. 
+                  The carousel will automatically load items from local storage when available.
+                </p>
+              </div>
+            </div>
+          </main>
+
+          {/* Toast */}
+          {toast && (
+            <Toast 
+              message={toast.message} 
+              type={toast.type} 
+              onClose={() => setToast(null)} 
+            />
+          )}
+
+          {/* CSS animations */}
+          <style>{`
+            @keyframes slideIn {
+              from {
+                opacity: 0;
+                transform: translateY(20px);
+              }
+              to {
+                opacity: 1;
+                transform: translateY(0);
+              }
+            }
+          `}</style>
+        </div>
+      );
+    };
+
+    // Render the app
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<CMSApp />);
+  </script>
+</body>
+</html>

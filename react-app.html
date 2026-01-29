@@ -44,13 +44,18 @@
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
-    // 3D Model Viewer Component
-    const Model3DViewer = ({ modelPath, isActive }) => {
+    // 3D Model Viewer Component - rotation driven by carousel angle so volume is visible
+    const Model3DViewer = ({ modelPath, isActive, carouselAngle }) => {
       const containerRef = useRef(null);
       const sceneRef = useRef(null);
       const rendererRef = useRef(null);
       const modelRef = useRef(null);
       const frameRef = useRef(null);
+      const carouselAngleRef = useRef(carouselAngle);
+      const isActiveRef = useRef(isActive);
+
+      carouselAngleRef.current = carouselAngle;
+      isActiveRef.current = isActive;
 
       useEffect(() => {
         if (!containerRef.current || !window.THREE) return;
@@ -62,32 +67,45 @@
         const scene = new THREE.Scene();
         sceneRef.current = scene;
 
-        // Camera
-        const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
-        camera.position.set(0, 1.5, 4);
+        // Renderer - size matches carousel item for crisp 3D (no CSS scaling)
+        const width = 300;
+        const height = 400;
 
-        // Renderer
+        // Camera - wider FOV for stronger 3D depth, aspect matches renderer
+        const camera = new THREE.PerspectiveCamera(55, width/height, 0.1, 1000);
+        camera.position.set(0, 1.2, 5.5);
+        camera.lookAt(0, 0.5, 0);
         const renderer = new THREE.WebGLRenderer({ 
           antialias: true, 
           alpha: true 
         });
-        renderer.setSize(280, 380);
-        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(width, height);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.setClearColor(0x000000, 0);
+        if (THREE.SRGBColorSpace) renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.domElement.style.display = 'block';
         rendererRef.current = renderer;
         containerRef.current.appendChild(renderer.domElement);
 
         // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
         scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
         directionalLight.position.set(5, 10, 7.5);
         scene.add(directionalLight);
 
-        const backLight = new THREE.DirectionalLight(0xB8FF38, 0.3);
+        const fillLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        fillLight.position.set(-5, 5, 5);
+        scene.add(fillLight);
+
+        const backLight = new THREE.DirectionalLight(0xB8FF38, 0.4);
         backLight.position.set(-5, 5, -5);
         scene.add(backLight);
+
+        const rimLight = new THREE.DirectionalLight(0x00ffff, 0.3);
+        rimLight.position.set(0, -5, -10);
+        scene.add(rimLight);
 
         // Load model
         const loader = new GLTFLoader();
@@ -103,11 +121,11 @@
             const size = box.getSize(new THREE.Vector3());
             
             const maxDim = Math.max(size.x, size.y, size.z);
-            const scale = 2 / maxDim;
+            const scale = 3 / maxDim;
             model.scale.setScalar(scale);
             
             model.position.x = -center.x * scale;
-            model.position.y = -center.y * scale - 0.5;
+            model.position.y = -center.y * scale - 0.3;
             model.position.z = -center.z * scale;
 
             scene.add(model);
@@ -116,12 +134,19 @@
           (error) => console.error('Error loading model:', error)
         );
 
-        // Animation loop
+        // Animation loop - model Y rotation follows carousel angle so you see volume when carousel rotates
         const animate = () => {
           frameRef.current = requestAnimationFrame(animate);
           
-          if (modelRef.current && isActive) {
-            modelRef.current.rotation.y += 0.005;
+          if (modelRef.current) {
+            const theta = carouselAngleRef.current;
+            const angleRad = (theta * Math.PI) / 180;
+            modelRef.current.rotation.y = angleRad;
+            // Slight tilt so model isn't flat-on - shows volume
+            modelRef.current.rotation.x = -0.15;
+            if (isActiveRef.current) {
+              modelRef.current.rotation.y += (Date.now() * 0.00015) % (Math.PI * 2);
+            }
           }
           
           renderer.render(scene, camera);
@@ -140,13 +165,6 @@
         };
       }, [modelPath]);
 
-      // Update rotation speed based on active state
-      useEffect(() => {
-        if (modelRef.current) {
-          // Model rotation is handled in animate loop
-        }
-      }, [isActive]);
-
       return (
         <div 
           ref={containerRef} 
@@ -155,7 +173,9 @@
             height: '100%',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center'
+            justifyContent: 'center',
+            transformStyle: 'preserve-3d',
+            perspective: '1000px'
           }}
         />
       );
@@ -179,10 +199,23 @@
       const angle = (360 / totalItems) * index;
       
       const shapeStyles = {
-        'item-1': { borderRadius: '50%', height: '120px' },
-        'item-2': { borderRadius: '10px' },
-        'item-3': { clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)', background: 'linear-gradient(to bottom, #fff, #ddd)' },
-        'item-4': { width: '140px', height: '140px', borderRadius: '50%', border: '20px solid #fff', background: 'transparent', boxShadow: 'none' },
+        'item-1': { borderRadius: '50%', width: '180px', height: '180px' },
+        'item-2': { borderRadius: '20px', width: '160px', height: '200px' },
+        'item-3': { 
+          clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)', 
+          background: 'linear-gradient(to bottom, #fff, #ddd)',
+          width: '180px',
+          height: '200px',
+          borderRadius: '0'
+        },
+        'item-4': { 
+          width: '160px', 
+          height: '160px', 
+          borderRadius: '50%', 
+          border: '25px solid #fff', 
+          background: 'transparent', 
+          boxShadow: 'none'
+        },
         'item-3d': {} // 3D models don't use CSS shapes
       };
 
@@ -196,49 +229,52 @@
             top: '50%',
             width: '300px',
             height: '400px',
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))',
-            border: isActive ? '1px solid rgba(255,255,255,0.6)' : '1px solid rgba(255,255,255,0.15)',
-            backdropFilter: 'blur(2px)',
+            background: 'transparent',
+            border: 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            opacity: isActive ? 1 : 0.4,
-            transition: 'opacity 0.5s, border-color 0.5s',
+            opacity: isActive ? 1 : 0.5,
+            transition: 'opacity 0.5s, transform 0.5s var(--easing)',
             cursor: 'pointer',
-            borderRadius: '0px',
             transform: `translate(-50%, -50%) rotateY(${angle}deg) translateZ(400px)`,
-            boxShadow: isActive ? '0 0 30px rgba(0,0,0,0.5)' : 'none',
             zIndex: isActive ? 100 : 1,
-            pointerEvents: 'auto'
+            pointerEvents: 'auto',
+            transformStyle: 'preserve-3d'
           }}
         >
           <div className="model-container" style={{
             width: '100%',
             height: '100%',
             position: 'relative',
-            overflow: 'hidden',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             transformStyle: 'preserve-3d'
           }}>
             {item.modelPath ? (
-              <Model3DViewer modelPath={item.modelPath} isActive={isActive} />
+              <Model3DViewer
+                modelPath={item.modelPath}
+                isActive={isActive}
+                carouselAngle={theta + angle}
+              />
             ) : (
               <div className="shape-wrapper" style={{
-                width: '100%',
-                height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transform: 'translateZ(50px)'
+                transformStyle: 'preserve-3d',
+                transform: isActive ? 'scale(1.2)' : 'scale(1)',
+                transition: 'transform 0.5s var(--easing)'
               }}>
                 <div className="geo-shape" style={{
-                  width: '120px',
-                  height: '180px',
+                  width: '150px',
+                  height: '220px',
                   background: 'radial-gradient(circle at 30% 30%, #ffffff, #dcdcdc 60%, #a0a0a0 100%)',
                   borderRadius: '60px',
                   position: 'relative',
-                  boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
-                  transition: 'transform 0.5s var(--easing)',
-                  transform: isActive ? 'scale(1.1) rotateY(10deg)' : 'none',
+                  boxShadow: isActive 
+                    ? '0 20px 60px rgba(0,0,0,0.6), 0 0 40px rgba(184, 255, 56, 0.2)' 
+                    : '0 10px 30px rgba(0,0,0,0.4)',
+                  transition: 'transform 0.5s var(--easing), box-shadow 0.5s var(--easing)',
+                  transform: isActive ? 'rotateY(15deg) rotateX(-5deg)' : 'rotateY(0deg)',
                   animation: isActive ? 'float 6s ease-in-out infinite' : 'none',
                   ...shapeStyles[item.class]
                 }}>
@@ -253,31 +289,22 @@
               </div>
             )}
           </div>
-          {isActive && (
-            <div style={{
-              content: '""',
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              boxShadow: 'inset 0 0 0 1px rgba(0, 255, 255, 0.2)',
-              pointerEvents: 'none'
-            }}></div>
-          )}
         </div>
       );
     };
 
     const HomePage = () => {
-      const data = [
+      // Default items (used if localStorage is empty)
+      const mccreeModelPath = "3DModels/McCree/scene.gltf";
+      const defaultData = [
         {
           name: "The Observer",
           desc: "A conceptual entity designed for architectural visualization. Features perfectly diffused reflection maps.",
           poly: "24k",
           mat: "Porcelain",
           rig: "Humanoid",
-          class: "item-1"
+          class: "item-3d",
+          modelPath: mccreeModelPath
         },
         {
           name: "Monolith v2",
@@ -285,7 +312,8 @@
           poly: "12k",
           mat: "Obsidian",
           rig: "Static",
-          class: "item-2"
+          class: "item-3d",
+          modelPath: mccreeModelPath
         },
         {
           name: "Prism Walker",
@@ -293,7 +321,8 @@
           poly: "4k",
           mat: "Glass",
           rig: "Bipedal",
-          class: "item-3"
+          class: "item-3d",
+          modelPath: mccreeModelPath
         },
         {
           name: "Loop Entity",
@@ -301,7 +330,8 @@
           poly: "68k",
           mat: "Ceramic",
           rig: "Soft Body",
-          class: "item-4"
+          class: "item-3d",
+          modelPath: mccreeModelPath
         },
         {
           name: "Apex Form",
@@ -309,7 +339,8 @@
           poly: "45k",
           mat: "Polymer",
           rig: "Custom",
-          class: "item-1"
+          class: "item-3d",
+          modelPath: mccreeModelPath
         },
         {
           name: "Null Object",
@@ -317,7 +348,8 @@
           poly: "2k",
           mat: "Greybox",
           rig: "None",
-          class: "item-2"
+          class: "item-3d",
+          modelPath: mccreeModelPath
         },
         {
           name: "McCree",
@@ -326,9 +358,26 @@
           mat: "Stylized PBR",
           rig: "Humanoid",
           class: "item-3d",
-          modelPath: "3DModels/McCree/scene.gltf"
+          modelPath: mccreeModelPath
         }
       ];
+
+      // Load from localStorage if available (managed by CMS), otherwise use defaults
+      const getCarouselData = () => {
+        try {
+          const saved = localStorage.getItem('carouselItems');
+          if (saved) {
+            const items = JSON.parse(saved);
+            // Add class: 'item-3d' to each item for compatibility
+            return items.map(item => ({ ...item, class: 'item-3d' }));
+          }
+        } catch (e) {
+          console.warn('Failed to load carousel items from localStorage:', e);
+        }
+        return defaultData;
+      };
+
+      const data = getCarouselData();
 
       const [theta, setTheta] = useState(0);
       const [selectedIndex, setSelectedIndex] = useState(0);
@@ -508,6 +557,16 @@
                   transition: 'color 0.3s',
                   position: 'relative'
                 }}>About</a>
+                <a href="cms.html" className="nav-link" style={{
+                  textDecoration: 'none',
+                  color: 'var(--lime, #B8FF38)',
+                  fontSize: '0.8rem',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.1em',
+                  transition: 'color 0.3s',
+                  position: 'relative',
+                  fontWeight: 500
+                }}>CMS</a>
               </nav>
             </header>
 
