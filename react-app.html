@@ -44,201 +44,6 @@
   <script type="text/babel">
     const { useState, useEffect, useRef, useCallback } = React;
 
-    // Hook to get responsive carousel dimensions based on viewport
-    const useCarouselDimensions = () => {
-      const [dimensions, setDimensions] = useState(() => calculateDimensions());
-
-      function calculateDimensions() {
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
-        
-        // Base dimensions scale with viewport
-        // On mobile (< 768px): smaller items
-        // On tablet (768-1024px): medium items
-        // On desktop (> 1024px): larger items
-        let itemWidth, itemHeight, carouselRadius;
-        
-        if (vw < 768) {
-          // Mobile
-          itemWidth = Math.min(vw * 0.6, 250);
-          itemHeight = itemWidth * 1.33;
-          carouselRadius = Math.min(vw * 0.5, 300);
-        } else if (vw < 1200) {
-          // Tablet
-          itemWidth = Math.min(vw * 0.35, 400);
-          itemHeight = itemWidth * 1.33;
-          carouselRadius = Math.min(vw * 0.4, 500);
-        } else {
-          // Desktop - scale with viewport, larger sizes
-          itemWidth = Math.min(vw * 0.28, 500);
-          itemHeight = itemWidth * 1.33;
-          carouselRadius = Math.min(vw * 0.35, 650);
-        }
-        
-        return {
-          itemWidth: Math.round(itemWidth),
-          itemHeight: Math.round(itemHeight),
-          carouselRadius: Math.round(carouselRadius)
-        };
-      }
-
-      useEffect(() => {
-        const handleResize = () => {
-          setDimensions(calculateDimensions());
-        };
-
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-      }, []);
-
-      return dimensions;
-    };
-
-    // 3D Model Viewer Component - rotation driven by carousel angle so volume is visible
-    const Model3DViewer = ({ modelPath, isActive, carouselAngle, width, height }) => {
-      const containerRef = useRef(null);
-      const sceneRef = useRef(null);
-      const rendererRef = useRef(null);
-      const cameraRef = useRef(null);
-      const modelRef = useRef(null);
-      const frameRef = useRef(null);
-      const carouselAngleRef = useRef(carouselAngle);
-      const isActiveRef = useRef(isActive);
-
-      carouselAngleRef.current = carouselAngle;
-      isActiveRef.current = isActive;
-
-      // Handle resize
-      useEffect(() => {
-        if (rendererRef.current && cameraRef.current) {
-          rendererRef.current.setSize(width, height);
-          cameraRef.current.aspect = width / height;
-          cameraRef.current.updateProjectionMatrix();
-        }
-      }, [width, height]);
-
-      useEffect(() => {
-        if (!containerRef.current || !window.THREE) return;
-
-        const THREE = window.THREE;
-        const GLTFLoader = window.GLTFLoader;
-
-        // Scene setup
-        const scene = new THREE.Scene();
-        sceneRef.current = scene;
-
-        // Camera - wider FOV for stronger 3D depth, aspect matches renderer
-        const camera = new THREE.PerspectiveCamera(55, width/height, 0.1, 1000);
-        camera.position.set(0, 1.2, 5.5);
-        camera.lookAt(0, 0.5, 0);
-        cameraRef.current = camera;
-        
-        const renderer = new THREE.WebGLRenderer({ 
-          antialias: true, 
-          alpha: true 
-        });
-        renderer.setSize(width, height);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        renderer.setClearColor(0x000000, 0);
-        if (THREE.SRGBColorSpace) renderer.outputColorSpace = THREE.SRGBColorSpace;
-        renderer.domElement.style.display = 'block';
-        rendererRef.current = renderer;
-        containerRef.current.appendChild(renderer.domElement);
-
-        // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
-        scene.add(ambientLight);
-
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
-        directionalLight.position.set(5, 10, 7.5);
-        scene.add(directionalLight);
-
-        const fillLight = new THREE.DirectionalLight(0xffffff, 0.5);
-        fillLight.position.set(-5, 5, 5);
-        scene.add(fillLight);
-
-        const backLight = new THREE.DirectionalLight(0xB8FF38, 0.4);
-        backLight.position.set(-5, 5, -5);
-        scene.add(backLight);
-
-        const rimLight = new THREE.DirectionalLight(0x00ffff, 0.3);
-        rimLight.position.set(0, -5, -10);
-        scene.add(rimLight);
-
-        // Load model
-        const loader = new GLTFLoader();
-        loader.load(
-          modelPath,
-          (gltf) => {
-            const model = gltf.scene;
-            modelRef.current = model;
-
-            // Center and scale model
-            const box = new THREE.Box3().setFromObject(model);
-            const center = box.getCenter(new THREE.Vector3());
-            const size = box.getSize(new THREE.Vector3());
-            
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const scale = 3 / maxDim;
-            model.scale.setScalar(scale);
-            
-            model.position.x = -center.x * scale;
-            model.position.y = -center.y * scale - 0.3;
-            model.position.z = -center.z * scale;
-
-            scene.add(model);
-          },
-          undefined,
-          (error) => console.error('Error loading model:', error)
-        );
-
-        // Animation loop - model Y rotation follows carousel angle so you see volume when carousel rotates
-        const animate = () => {
-          frameRef.current = requestAnimationFrame(animate);
-          
-          if (modelRef.current) {
-            const theta = carouselAngleRef.current;
-            const angleRad = (theta * Math.PI) / 180;
-            modelRef.current.rotation.y = angleRad;
-            // Slight tilt so model isn't flat-on - shows volume
-            modelRef.current.rotation.x = -0.15;
-            if (isActiveRef.current) {
-              modelRef.current.rotation.y += (Date.now() * 0.00015) % (Math.PI * 2);
-            }
-          }
-          
-          renderer.render(scene, camera);
-        };
-        animate();
-
-        // Cleanup
-        return () => {
-          if (frameRef.current) {
-            cancelAnimationFrame(frameRef.current);
-          }
-          if (rendererRef.current && containerRef.current) {
-            containerRef.current.removeChild(rendererRef.current.domElement);
-            rendererRef.current.dispose();
-          }
-        };
-      }, [modelPath, width, height]);
-
-      return (
-        <div 
-          ref={containerRef} 
-          style={{
-            width: '100%',
-            height: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transformStyle: 'preserve-3d',
-            perspective: '1000px'
-          }}
-        />
-      );
-    };
-
     const customStyles = {
       root: {
         '--void': '#030303',
@@ -253,113 +58,307 @@
       }
     };
 
-    const CarouselItem = ({ item, index, theta, totalItems, onClick, isActive, itemWidth, itemHeight, carouselRadius }) => {
-      const angle = (360 / totalItems) * index;
-      
-      // Scale shape dimensions based on item size
-      const shapeScale = itemWidth / 300;
-      
-      const shapeStyles = {
-        'item-1': { borderRadius: '50%', width: `${180 * shapeScale}px`, height: `${180 * shapeScale}px` },
-        'item-2': { borderRadius: '20px', width: `${160 * shapeScale}px`, height: `${200 * shapeScale}px` },
-        'item-3': { 
-          clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)', 
-          background: 'linear-gradient(to bottom, #fff, #ddd)',
-          width: `${180 * shapeScale}px`,
-          height: `${200 * shapeScale}px`,
-          borderRadius: '0'
-        },
-        'item-4': { 
-          width: `${160 * shapeScale}px`, 
-          height: `${160 * shapeScale}px`, 
-          borderRadius: '50%', 
-          border: `${25 * shapeScale}px solid #fff`, 
-          background: 'transparent', 
-          boxShadow: 'none'
-        },
-        'item-3d': {} // 3D models don't use CSS shapes
-      };
+    // Shared 3D Canvas Component - renders all models in a single Three.js scene
+    const Shared3DCanvas = ({ items, selectedIndex, theta, onRotate, onSelectedModelScreenPos }) => {
+      const containerRef = useRef(null);
+      const sceneRef = useRef(null);
+      const rendererRef = useRef(null);
+      const cameraRef = useRef(null);
+      const carouselGroupRef = useRef(null);
+      const modelsRef = useRef([]);
+      const frameRef = useRef(null);
+      const thetaRef = useRef(theta);
+      const selectedIndexRef = useRef(selectedIndex);
+      const tiltMouseRef = useRef({ x: 0, y: 0 });
+      const raycasterRef = useRef(null);
+      const mouseRef = useRef(new window.THREE.Vector2());
+      const onSelectedModelScreenPosRef = useRef(onSelectedModelScreenPos);
+
+      // Update refs when props change
+      thetaRef.current = theta;
+      selectedIndexRef.current = selectedIndex;
+      onSelectedModelScreenPosRef.current = onSelectedModelScreenPos;
+
+      useEffect(() => {
+        if (!containerRef.current || !window.THREE) return;
+
+        const THREE = window.THREE;
+        const GLTFLoader = window.GLTFLoader;
+
+        // Scene setup
+        const scene = new THREE.Scene();
+        sceneRef.current = scene;
+
+        // Camera - positioned to view the carousel
+        const camera = new THREE.PerspectiveCamera(
+          50,
+          window.innerWidth / window.innerHeight,
+          0.1,
+          1000
+        );
+        camera.position.set(0, 1.5, 12);
+        camera.lookAt(0, 1.5, 0); // Look at carousel center
+        cameraRef.current = camera;
+
+        // Renderer
+        const renderer = new THREE.WebGLRenderer({
+          antialias: true,
+          alpha: true
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setClearColor(0x000000, 0);
+        if (THREE.SRGBColorSpace) renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.domElement.style.position = 'absolute';
+        renderer.domElement.style.top = '0';
+        renderer.domElement.style.left = '0';
+        renderer.domElement.style.width = '100%';
+        renderer.domElement.style.height = '100%';
+        renderer.domElement.style.pointerEvents = 'auto';
+        rendererRef.current = renderer;
+        containerRef.current.appendChild(renderer.domElement);
+
+        raycasterRef.current = new THREE.Raycaster();
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        directionalLight.position.set(5, 10, 7.5);
+        scene.add(directionalLight);
+
+        const fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
+        fillLight.position.set(-5, 5, 5);
+        scene.add(fillLight);
+
+        const backLight = new THREE.DirectionalLight(0xB8FF38, 0.3);
+        backLight.position.set(-5, 5, -5);
+        scene.add(backLight);
+
+        const rimLight = new THREE.DirectionalLight(0x00ffff, 0.2);
+        rimLight.position.set(0, -5, -10);
+        scene.add(rimLight);
+
+        // Carousel group - this will rotate (raised so it's centered on the page)
+        const carouselGroup = new THREE.Group();
+        carouselGroup.position.y = 1.5;
+        scene.add(carouselGroup);
+        carouselGroupRef.current = carouselGroup;
+
+        // Carousel radius in 3D space
+        const carouselRadius = 6;
+        const totalItems = items.length;
+
+        // Load all models
+        const loader = new GLTFLoader();
+        modelsRef.current = [];
+
+        items.forEach((item, index) => {
+          if (item.modelPath) {
+            // Create a group for each model position
+            const modelGroup = new THREE.Group();
+
+            // Position on carousel circle (index 0 at front, going clockwise)
+            const angle = -(index / totalItems) * Math.PI * 2;
+            modelGroup.position.set(
+              Math.sin(angle) * carouselRadius,
+              0,
+              Math.cos(angle) * carouselRadius
+            );
+            modelGroup.rotation.y = angle + Math.PI; // Face outward
+
+            carouselGroup.add(modelGroup);
+            modelsRef.current[index] = { group: modelGroup, model: null };
+
+            // Load the model
+            loader.load(
+              item.modelPath,
+              (gltf) => {
+                const model = gltf.scene;
+
+                model.traverse((child) => {
+                  if (child.isMesh) child.userData.index = index;
+                });
+
+                // Center and scale model
+                const box = new THREE.Box3().setFromObject(model);
+                const center = box.getCenter(new THREE.Vector3());
+                const size = box.getSize(new THREE.Vector3());
+                const scale = 2.5 / Math.max(size.x, size.y, size.z);
+                
+                model.scale.setScalar(scale);
+                model.position.set(
+                  -center.x * scale,
+                  -center.y * scale - 0.3,
+                  -center.z * scale
+                );
+
+                modelGroup.add(model);
+                modelsRef.current[index].model = model;
+              },
+              undefined,
+              (error) => console.error('Error loading model:', error)
+            );
+          }
+        });
+
+        // Handle window resize
+        const handleResize = () => {
+          camera.aspect = window.innerWidth / window.innerHeight;
+          camera.updateProjectionMatrix();
+          renderer.setSize(window.innerWidth, window.innerHeight);
+        };
+        window.addEventListener('resize', handleResize);
+
+        // Click on model to rotate: right-side model = next, left-side model = prev
+        const handleClick = (event) => {
+          const rect = renderer.domElement.getBoundingClientRect();
+          mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+          mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+          raycasterRef.current.setFromCamera(mouseRef.current, camera);
+
+          const meshes = [];
+          modelsRef.current.forEach((entry) => {
+            if (entry?.model) {
+              entry.model.traverse((child) => {
+                if (child.isMesh) meshes.push(child);
+              });
+            }
+          });
+
+          const intersects = raycasterRef.current.intersectObjects(meshes, false);
+          if (intersects.length === 0 || intersects[0].object.userData.index === undefined) return;
+
+          const clickedIndex = intersects[0].object.userData.index;
+          const current = selectedIndexRef.current;
+          const n = totalItems;
+          const nextIndex = (current + 1) % n;
+          const prevIndex = (current - 1 + n) % n;
+
+          if (clickedIndex === nextIndex && onRotate) onRotate(1);
+          else if (clickedIndex === prevIndex && onRotate) onRotate(-1);
+        };
+        renderer.domElement.addEventListener('click', handleClick);
+
+        // Mouse-based tilt (normalized -1 to 1, center = 0)
+        const handleMouseMove = (e) => {
+          tiltMouseRef.current.x = (e.clientX / window.innerWidth) * 2 - 1;
+          tiltMouseRef.current.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        };
+        window.addEventListener('mousemove', handleMouseMove);
+
+        // Animation loop
+        let currentRotation = 0;
+        let currentTiltX = 0;
+        let currentTiltZ = 0;
+        const tiltStrength = 0.06; // max ~3.5 degrees
+        const tiltLerp = 0.06;
+
+        const animate = () => {
+          frameRef.current = requestAnimationFrame(animate);
+
+          // Smoothly interpolate carousel rotation based on theta
+          const targetRotation = (thetaRef.current * Math.PI) / 180;
+          currentRotation += (targetRotation - currentRotation) * 0.08;
+          carouselGroup.rotation.y = currentRotation;
+
+          // Subtle tilt based on mouse (lerped for smoothness)
+          const targetTiltX = tiltMouseRef.current.y * tiltStrength;
+          const targetTiltZ = tiltMouseRef.current.x * tiltStrength;
+          currentTiltX += (targetTiltX - currentTiltX) * tiltLerp;
+          currentTiltZ += (targetTiltZ - currentTiltZ) * tiltLerp;
+          carouselGroup.rotation.x = currentTiltX;
+          carouselGroup.rotation.z = currentTiltZ;
+
+          // Report selected model screen position for connecting line
+          const reportPos = onSelectedModelScreenPosRef.current;
+          if (reportPos) {
+            const entry = modelsRef.current[selectedIndexRef.current];
+            if (entry?.group) {
+              const worldPos = new THREE.Vector3();
+              entry.group.getWorldPosition(worldPos);
+              worldPos.project(camera);
+              const rect = renderer.domElement.getBoundingClientRect();
+              const screenX = (worldPos.x * 0.5 + 0.5) * rect.width + rect.left;
+              const screenY = (-worldPos.y * 0.5 + 0.5) * rect.height + rect.top;
+              reportPos(screenX, screenY);
+            }
+          }
+
+          // Update individual model rotations and opacity
+          modelsRef.current.forEach((item, index) => {
+            if (item && item.model) {
+              const isActive = index === selectedIndexRef.current;
+
+              // Active model spins slowly
+              if (isActive) {
+                item.model.rotation.y += 0.005;
+              }
+
+              // Scale based on selection
+              const targetScale = isActive ? 1.15 : 0.9;
+              item.group.scale.lerp(
+                new THREE.Vector3(targetScale, targetScale, targetScale),
+                0.1
+              );
+
+              // Adjust opacity/material for non-active items
+              item.model.traverse((child) => {
+                if (child.isMesh && child.material) {
+                  if (Array.isArray(child.material)) {
+                    child.material.forEach((mat) => {
+                      if (mat.opacity !== undefined) {
+                        mat.transparent = true;
+                        mat.opacity = isActive ? 1 : 0.6;
+                      }
+                    });
+                  } else {
+                    child.material.transparent = true;
+                    child.material.opacity = isActive ? 1 : 0.6;
+                  }
+                }
+              });
+            }
+          });
+
+          renderer.render(scene, camera);
+        };
+        animate();
+
+        // Cleanup
+        return () => {
+          if (frameRef.current) {
+            cancelAnimationFrame(frameRef.current);
+          }
+          window.removeEventListener('resize', handleResize);
+          window.removeEventListener('mousemove', handleMouseMove);
+          renderer.domElement.removeEventListener('click', handleClick);
+          if (rendererRef.current && containerRef.current) {
+            containerRef.current.removeChild(rendererRef.current.domElement);
+            rendererRef.current.dispose();
+          }
+        };
+      }, [items]);
 
       return (
-        <div 
-          className={`carousel-item ${item.class} ${isActive ? 'active' : ''}`}
-          onClick={onClick}
+        <div
+          ref={containerRef}
           style={{
             position: 'absolute',
-            left: '50%',
-            top: '50%',
-            width: `${itemWidth}px`,
-            height: `${itemHeight}px`,
-            background: 'transparent',
-            border: 'none',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: isActive ? 1 : 0.5,
-            transition: 'opacity 0.5s, transform 0.5s var(--easing)',
-            cursor: 'pointer',
-            transform: `translate(-50%, -50%) rotateY(${angle}deg) translateZ(${carouselRadius}px)`,
-            zIndex: isActive ? 100 : 1,
-            pointerEvents: 'auto',
-            transformStyle: 'preserve-3d'
-          }}
-        >
-          <div className="model-container" style={{
+            top: 0,
+            left: 0,
             width: '100%',
             height: '100%',
-            position: 'relative',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transformStyle: 'preserve-3d'
-          }}>
-            {item.modelPath ? (
-              <Model3DViewer
-                modelPath={item.modelPath}
-                isActive={isActive}
-                carouselAngle={theta + angle}
-                width={itemWidth}
-                height={itemHeight}
-              />
-            ) : (
-              <div className="shape-wrapper" style={{
-                transformStyle: 'preserve-3d',
-                transform: isActive ? 'scale(1.2)' : 'scale(1)',
-                transition: 'transform 0.5s var(--easing)'
-              }}>
-                <div className="geo-shape" style={{
-                  width: `${150 * shapeScale}px`,
-                  height: `${220 * shapeScale}px`,
-                  background: 'radial-gradient(circle at 30% 30%, #ffffff, #dcdcdc 60%, #a0a0a0 100%)',
-                  borderRadius: `${60 * shapeScale}px`,
-                  position: 'relative',
-                  boxShadow: isActive 
-                    ? '0 20px 60px rgba(0,0,0,0.6), 0 0 40px rgba(184, 255, 56, 0.2)' 
-                    : '0 10px 30px rgba(0,0,0,0.4)',
-                  transition: 'transform 0.5s var(--easing), box-shadow 0.5s var(--easing)',
-                  transform: isActive ? 'rotateY(15deg) rotateX(-5deg)' : 'rotateY(0deg)',
-                  animation: isActive ? 'float 6s ease-in-out infinite' : 'none',
-                  ...shapeStyles[item.class]
-                }}>
-                  <div style={{
-                    content: '""',
-                    position: 'absolute',
-                    inset: 0,
-                    borderRadius: item.class === 'item-4' ? '50%' : (item.class === 'item-1' ? '50%' : (item.class === 'item-2' ? '10px' : `${60 * shapeScale}px`)),
-                    boxShadow: item.class === 'item-4' ? 'none' : 'inset -5px -5px 20px rgba(0,0,0,0.2), inset 2px 2px 10px rgba(255,255,255,1)'
-                  }}></div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+            pointerEvents: 'auto',
+            zIndex: 2
+          }}
+        />
       );
     };
 
     const HomePage = () => {
-      // Get responsive carousel dimensions
-      const { itemWidth, itemHeight, carouselRadius } = useCarouselDimensions();
-      
       // Carousel items data
       const defaultData = [
         {
@@ -412,32 +411,35 @@
       const [data, setData] = useState(defaultData);
       const [theta, setTheta] = useState(0);
       const [selectedIndex, setSelectedIndex] = useState(0);
-      const [sceneTransform, setSceneTransform] = useState('rotateX(-5deg) rotateZ(-5deg)');
       const [panelOpacity, setPanelOpacity] = useState(1);
-      const sceneRef = useRef(null);
+      const [modelScreenPos, setModelScreenPos] = useState({ x: 0, y: 0 });
+      const [viewportSize, setViewportSize] = useState(() => ({
+        width: typeof window !== 'undefined' ? window.innerWidth : 1920,
+        height: typeof window !== 'undefined' ? window.innerHeight : 1080
+      }));
+      const [panelRect, setPanelRect] = useState(null);
+      const detailsPanelRef = useRef(null);
+
+      const setDetailsPanelRef = useCallback((el) => {
+        detailsPanelRef.current = el;
+        setPanelRect(el ? el.getBoundingClientRect() : null);
+      }, []);
 
       useEffect(() => {
-        const styleSheet = document.createElement('style');
-        styleSheet.textContent = `
-          @keyframes float {
-            0%, 100% { transform: translateY(0px) rotateY(10deg); }
-            50% { transform: translateY(-15px) rotateY(10deg); }
-          }
-        `;
-        document.head.appendChild(styleSheet);
-
-        const handleMouseMove = (e) => {
-          const x = (e.clientX / window.innerWidth - 0.5) * 20;
-          const y = (e.clientY / window.innerHeight - 0.5) * 20;
-          setSceneTransform(`rotateX(${-5 - y * 0.5}deg) rotateZ(${-5 + x * 0.2}deg) translateY(${y}px) translateX(${x}px)`);
+        const onResize = () => {
+          setViewportSize({ width: window.innerWidth, height: window.innerHeight });
+          setPanelRect(detailsPanelRef.current ? detailsPanelRef.current.getBoundingClientRect() : null);
         };
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+      }, []);
 
-        document.addEventListener('mousemove', handleMouseMove);
-
-        return () => {
-          document.head.removeChild(styleSheet);
-          document.removeEventListener('mousemove', handleMouseMove);
-        };
+      // Measure panel after paint so line has valid target on first frame
+      useEffect(() => {
+        const t = requestAnimationFrame(() => {
+          if (detailsPanelRef.current) setPanelRect(detailsPanelRef.current.getBoundingClientRect());
+        });
+        return () => cancelAnimationFrame(t);
       }, []);
 
       const rotateCarousel = (direction) => {
@@ -448,36 +450,52 @@
         if (newIndex >= data.length) newIndex = 0;
         
         setSelectedIndex(newIndex);
-        setTheta(prev => prev - direction * (360 / data.length));
+        
+        const degreesPerItem = 360 / data.length;
+        setTheta(prev => prev + direction * degreesPerItem);
         
         setTimeout(() => {
           setPanelOpacity(1);
         }, 200);
       };
 
-      const handleItemClick = (index) => {
-        const diff = index - selectedIndex;
-        rotateCarousel(diff);
-      };
-
-      const getActiveIndex = () => {
-        return selectedIndex % data.length;
-      };
-
-      const currentItem = data[getActiveIndex()];
+      // Derive display index from theta so the panel always matches the carousel rotation
+      const degreesPerItem = 360 / data.length;
+      const normalizedTheta = ((theta % 360) + 360) % 360;
+      const displayIndex = Math.round(normalizedTheta / degreesPerItem) % data.length;
+      const currentItem = data[displayIndex];
 
       return (
         <div style={{ 
-          backgroundColor: 'var(--void)',
+          minHeight: '100vh',
+          width: '100%',
+          backgroundColor: '#000000',
           color: 'white',
           fontFamily: 'var(--font-main)',
           height: '100vh',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
-          perspective: '2000px',
+          position: 'relative',
           ...customStyles.root
         }}>
+          {/* Dark noise colored background */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 1,
+              background: '#000000',
+              backgroundImage: `
+                radial-gradient(circle at 1px 1px, rgba(139, 92, 246, 0.2) 1px, transparent 0),
+                radial-gradient(circle at 1px 1px, rgba(59, 130, 246, 0.18) 1px, transparent 0),
+                radial-gradient(circle at 1px 1px, rgba(236, 72, 153, 0.15) 1px, transparent 0)
+              `,
+              backgroundSize: '20px 20px, 30px 30px, 25px 25px',
+              backgroundPosition: '0 0, 10px 10px, 15px 5px',
+              pointerEvents: 'none'
+            }}
+          />
           <div className="ambient-light" style={{
             position: 'fixed',
             width: '100vw',
@@ -487,57 +505,72 @@
             zIndex: 0
           }}></div>
 
-          <div className="content" style={{
-            position: 'relative',
-            zIndex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '100vh',
-            pointerEvents: 'none'
+          {/* Shared 3D Canvas for all models */}
+          <Shared3DCanvas
+            items={data}
+            selectedIndex={displayIndex}
+            theta={theta}
+            onRotate={rotateCarousel}
+            onSelectedModelScreenPos={(x, y) => setModelScreenPos({ x, y })}
+          />
+
+          {/* UI Overlay */}
+          <div className="ui-overlay" style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            pointerEvents: 'none',
+            zIndex: 10
           }}>
-            <div 
-              ref={sceneRef}
-              className="scene" 
-              style={{
-                width: '100%',
-                height: '100%',
-                transformStyle: 'preserve-3d',
-                transform: sceneTransform,
-                transition: 'transform 0.5s var(--easing)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                position: 'relative'
-              }}
-            >
-              <div className="carousel" style={{
-                position: 'relative',
-                width: '100%',
-                height: '100%',
-                transformStyle: 'preserve-3d',
-                transform: `translateZ(-${carouselRadius}px) rotateY(${theta}deg)`,
-                transition: 'transform 0.8s var(--easing)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                {data.map((item, idx) => (
-                  <CarouselItem
-                    key={idx}
-                    item={item}
-                    index={idx}
-                    theta={theta}
-                    totalItems={data.length}
-                    onClick={() => handleItemClick(idx)}
-                    isActive={idx === getActiveIndex()}
-                    itemWidth={itemWidth}
-                    itemHeight={itemHeight}
-                    carouselRadius={carouselRadius}
-                  />
-                ))}
-              </div>
-            </div>
+            {/* Animated connecting line: selected model -> details panel (above panel, below header) */}
+            {viewportSize.width > 0 && typeof modelScreenPos.x === 'number' && typeof modelScreenPos.y === 'number' && (
+              (() => {
+                const mx = modelScreenPos.x;
+                const my = modelScreenPos.y;
+                const panelCenterY = panelRect ? panelRect.top + panelRect.height / 2 : viewportSize.height - 120;
+                const panelLeft = panelRect ? panelRect.left : 24;
+                const cornerX = Math.min(mx - 80, panelLeft + 50);
+                const pathD = `M ${mx} ${my} L ${cornerX} ${my} L ${cornerX} ${panelCenterY} L ${panelLeft} ${panelCenterY}`;
+                return (
+                  <div style={{
+                    position: 'absolute',
+                    inset: 0,
+                    pointerEvents: 'none',
+                    zIndex: 15,
+                    isolation: 'isolate'
+                  }}>
+                    <svg
+                      className="connecting-line-svg"
+                      style={{
+                        position: 'absolute',
+                        left: 0,
+                        top: 0,
+                        width: '100%',
+                        height: '100%',
+                        pointerEvents: 'none',
+                        overflow: 'visible'
+                      }}
+                      viewBox={`0 0 ${viewportSize.width} ${viewportSize.height}`}
+                      preserveAspectRatio="none"
+                    >
+                      <path
+                        d={pathD}
+                        fill="none"
+                        stroke="rgba(255,255,255,0.75)"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeDasharray="8 6"
+                        style={{ animation: 'connectingLineFlow 1.2s linear infinite' }}
+                      />
+                      <circle cx={mx} cy={my} r="5" fill="rgba(255,255,255,0.95)" />
+                    </svg>
+                  </div>
+                );
+              })()
+            )}
 
             <header style={{
               position: 'absolute',
@@ -596,7 +629,7 @@
               </nav>
             </header>
 
-            <div className="details-panel" style={{
+            <div ref={setDetailsPanelRef} className="details-panel" style={{
               pointerEvents: 'auto',
               width: 'min(350px, calc(100vw - 2rem))',
               maxWidth: '350px',
@@ -769,6 +802,15 @@
           body {
             margin: 0;
             padding: 0;
+          }
+
+          .connecting-line-svg path {
+            stroke-dasharray: 8 6;
+          }
+
+          @keyframes connectingLineFlow {
+            0% { stroke-dashoffset: 0; }
+            100% { stroke-dashoffset: 14; }
           }
 
           .nav-link:hover {
