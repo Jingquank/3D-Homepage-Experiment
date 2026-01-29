@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Geometric Carousel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    
+    // Make Three.js available globally for the Babel script
+    window.THREE = THREE;
+    window.GLTFLoader = GLTFLoader;
+    window.OrbitControls = OrbitControls;
+  </script>
+  
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // 3D Model Viewer Component
+    const Model3DViewer = ({ modelPath, isActive }) => {
+      const containerRef = useRef(null);
+      const sceneRef = useRef(null);
+      const rendererRef = useRef(null);
+      const modelRef = useRef(null);
+      const frameRef = useRef(null);
+
+      useEffect(() => {
+        if (!containerRef.current || !window.THREE) return;
+
+        const THREE = window.THREE;
+        const GLTFLoader = window.GLTFLoader;
+
+        // Scene setup
+        const scene = new THREE.Scene();
+        sceneRef.current = scene;
+
+        // Camera
+        const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+        camera.position.set(0, 1.5, 4);
+
+        // Renderer
+        const renderer = new THREE.WebGLRenderer({ 
+          antialias: true, 
+          alpha: true 
+        });
+        renderer.setSize(280, 380);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setClearColor(0x000000, 0);
+        rendererRef.current = renderer;
+        containerRef.current.appendChild(renderer.domElement);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(5, 10, 7.5);
+        scene.add(directionalLight);
+
+        const backLight = new THREE.DirectionalLight(0xB8FF38, 0.3);
+        backLight.position.set(-5, 5, -5);
+        scene.add(backLight);
+
+        // Load model
+        const loader = new GLTFLoader();
+        loader.load(
+          modelPath,
+          (gltf) => {
+            const model = gltf.scene;
+            modelRef.current = model;
+
+            // Center and scale model
+            const box = new THREE.Box3().setFromObject(model);
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+            
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const scale = 2 / maxDim;
+            model.scale.setScalar(scale);
+            
+            model.position.x = -center.x * scale;
+            model.position.y = -center.y * scale - 0.5;
+            model.position.z = -center.z * scale;
+
+            scene.add(model);
+          },
+          undefined,
+          (error) => console.error('Error loading model:', error)
+        );
+
+        // Animation loop
+        const animate = () => {
+          frameRef.current = requestAnimationFrame(animate);
+          
+          if (modelRef.current && isActive) {
+            modelRef.current.rotation.y += 0.005;
+          }
+          
+          renderer.render(scene, camera);
+        };
+        animate();
+
+        // Cleanup
+        return () => {
+          if (frameRef.current) {
+            cancelAnimationFrame(frameRef.current);
+          }
+          if (rendererRef.current && containerRef.current) {
+            containerRef.current.removeChild(rendererRef.current.domElement);
+            rendererRef.current.dispose();
+          }
+        };
+      }, [modelPath]);
+
+      // Update rotation speed based on active state
+      useEffect(() => {
+        if (modelRef.current) {
+          // Model rotation is handled in animate loop
+        }
+      }, [isActive]);
+
+      return (
+        <div 
+          ref={containerRef} 
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        />
+      );
+    };
+
+    const customStyles = {
+      root: {
+        '--void': '#030303',
+        '--glass-surface': 'rgba(255, 255, 255, 0.03)',
+        '--glass-edge': 'rgba(255, 255, 255, 0.15)',
+        '--prism-1': '#00ffff',
+        '--prism-2': '#ff00ff',
+        '--prism-3': '#ffff00',
+        '--matte-white': '#f0f0f0',
+        '--font-main': "'Prompt', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+        '--easing': 'cubic-bezier(0.23, 1, 0.32, 1)'
+      }
+    };
+
+    const CarouselItem = ({ item, index, theta, totalItems, onClick, isActive }) => {
+      const angle = (360 / totalItems) * index;
+      
+      const shapeStyles = {
+        'item-1': { borderRadius: '50%', height: '120px' },
+        'item-2': { borderRadius: '10px' },
+        'item-3': { clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)', background: 'linear-gradient(to bottom, #fff, #ddd)' },
+        'item-4': { width: '140px', height: '140px', borderRadius: '50%', border: '20px solid #fff', background: 'transparent', boxShadow: 'none' },
+        'item-3d': {} // 3D models don't use CSS shapes
+      };
+
+      return (
+        <div 
+          className={`carousel-item ${item.class} ${isActive ? 'active' : ''}`}
+          onClick={onClick}
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            width: '300px',
+            height: '400px',
+            background: 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))',
+            border: isActive ? '1px solid rgba(255,255,255,0.6)' : '1px solid rgba(255,255,255,0.15)',
+            backdropFilter: 'blur(2px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: isActive ? 1 : 0.4,
+            transition: 'opacity 0.5s, border-color 0.5s',
+            cursor: 'pointer',
+            borderRadius: '0px',
+            transform: `translate(-50%, -50%) rotateY(${angle}deg) translateZ(400px)`,
+            boxShadow: isActive ? '0 0 30px rgba(0,0,0,0.5)' : 'none',
+            zIndex: isActive ? 100 : 1,
+            pointerEvents: 'auto'
+          }}
+        >
+          <div className="model-container" style={{
+            width: '100%',
+            height: '100%',
+            position: 'relative',
+            overflow: 'hidden',
+            transformStyle: 'preserve-3d'
+          }}>
+            {item.modelPath ? (
+              <Model3DViewer modelPath={item.modelPath} isActive={isActive} />
+            ) : (
+              <div className="shape-wrapper" style={{
+                width: '100%',
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transform: 'translateZ(50px)'
+              }}>
+                <div className="geo-shape" style={{
+                  width: '120px',
+                  height: '180px',
+                  background: 'radial-gradient(circle at 30% 30%, #ffffff, #dcdcdc 60%, #a0a0a0 100%)',
+                  borderRadius: '60px',
+                  position: 'relative',
+                  boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                  transition: 'transform 0.5s var(--easing)',
+                  transform: isActive ? 'scale(1.1) rotateY(10deg)' : 'none',
+                  animation: isActive ? 'float 6s ease-in-out infinite' : 'none',
+                  ...shapeStyles[item.class]
+                }}>
+                  <div style={{
+                    content: '""',
+                    position: 'absolute',
+                    inset: 0,
+                    borderRadius: item.class === 'item-4' ? '50%' : (item.class === 'item-1' ? '50%' : (item.class === 'item-2' ? '10px' : '60px')),
+                    boxShadow: item.class === 'item-4' ? 'none' : 'inset -5px -5px 20px rgba(0,0,0,0.2), inset 2px 2px 10px rgba(255,255,255,1)'
+                  }}></div>
+                </div>
+              </div>
+            )}
+          </div>
+          {isActive && (
+            <div style={{
+              content: '""',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              boxShadow: 'inset 0 0 0 1px rgba(0, 255, 255, 0.2)',
+              pointerEvents: 'none'
+            }}></div>
+          )}
+        </div>
+      );
+    };
+
+    const HomePage = () => {
+      const data = [
+        {
+          name: "The Observer",
+          desc: "A conceptual entity designed for architectural visualization. Features perfectly diffused reflection maps.",
+          poly: "24k",
+          mat: "Porcelain",
+          rig: "Humanoid",
+          class: "item-1"
+        },
+        {
+          name: "Monolith v2",
+          desc: "Brutalist geometry meets organic motion. Designed for heavy industrial scapes and tech-noir environments.",
+          poly: "12k",
+          mat: "Obsidian",
+          rig: "Static",
+          class: "item-2"
+        },
+        {
+          name: "Prism Walker",
+          desc: "Low-poly abstraction with high-fidelity refraction shaders. Ideal for background crowd simulation.",
+          poly: "4k",
+          mat: "Glass",
+          rig: "Bipedal",
+          class: "item-3"
+        },
+        {
+          name: "Loop Entity",
+          desc: "Infinite recursion topology. A mathematical curiosity rendered in high-impact matte white.",
+          poly: "68k",
+          mat: "Ceramic",
+          rig: "Soft Body",
+          class: "item-4"
+        },
+        {
+          name: "Apex Form",
+          desc: "The pinnacle of the collection. A seamless blend of hard surface modeling and cloth simulation.",
+          poly: "45k",
+          mat: "Polymer",
+          rig: "Custom",
+          class: "item-1"
+        },
+        {
+          name: "Null Object",
+          desc: "Base mesh for rapid prototyping. Clean topology and UV unwrapped for instant texture application.",
+          poly: "2k",
+          mat: "Greybox",
+          rig: "None",
+          class: "item-2"
+        },
+        {
+          name: "McCree",
+          desc: "Low-poly character model from the Overwatch universe. Stylized cowboy gunslinger with detailed texturing.",
+          poly: "8k",
+          mat: "Stylized PBR",
+          rig: "Humanoid",
+          class: "item-3d",
+          modelPath: "3DModels/McCree/scene.gltf"
+        }
+      ];
+
+      const [theta, setTheta] = useState(0);
+      const [selectedIndex, setSelectedIndex] = useState(0);
+      const [sceneTransform, setSceneTransform] = useState('rotateX(-5deg) rotateZ(-5deg)');
+      const [panelOpacity, setPanelOpacity] = useState(1);
+      const sceneRef = useRef(null);
+
+      useEffect(() => {
+        const styleSheet = document.createElement('style');
+        styleSheet.textContent = `
+          @keyframes float {
+            0%, 100% { transform: translateY(0px) rotateY(10deg); }
+            50% { transform: translateY(-15px) rotateY(10deg); }
+          }
+        `;
+        document.head.appendChild(styleSheet);
+
+        const handleMouseMove = (e) => {
+          const x = (e.clientX / window.innerWidth - 0.5) * 20;
+          const y = (e.clientY / window.innerHeight - 0.5) * 20;
+          setSceneTransform(`rotateX(${-5 - y * 0.5}deg) rotateZ(${-5 + x * 0.2}deg) translateY(${y}px) translateX(${x}px)`);
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+
+        return () => {
+          document.head.removeChild(styleSheet);
+          document.removeEventListener('mousemove', handleMouseMove);
+        };
+      }, []);
+
+      const rotateCarousel = (direction) => {
+        setPanelOpacity(0.5);
+        
+        let newIndex = selectedIndex + direction;
+        if (newIndex < 0) newIndex = data.length - 1;
+        if (newIndex >= data.length) newIndex = 0;
+        
+        setSelectedIndex(newIndex);
+        setTheta(prev => prev - direction * (360 / data.length));
+        
+        setTimeout(() => {
+          setPanelOpacity(1);
+        }, 200);
+      };
+
+      const handleItemClick = (index) => {
+        const diff = index - selectedIndex;
+        rotateCarousel(diff);
+      };
+
+      const getActiveIndex = () => {
+        return selectedIndex % data.length;
+      };
+
+      const currentItem = data[getActiveIndex()];
+
+      return (
+        <div style={{ 
+          backgroundColor: 'var(--void)',
+          color: 'white',
+          fontFamily: 'var(--font-main)',
+          height: '100vh',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          perspective: '2000px',
+          ...customStyles.root
+        }}>
+          <div className="ambient-light" style={{
+            position: 'fixed',
+            width: '100vw',
+            height: '100vh',
+            pointerEvents: 'none',
+            background: 'radial-gradient(circle at 20% 50%, rgba(40, 40, 60, 0.4) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(60, 40, 40, 0.2) 0%, transparent 40%)',
+            zIndex: 0
+          }}></div>
+
+          <div className="content" style={{
+            position: 'relative',
+            zIndex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '100vh',
+            pointerEvents: 'none'
+          }}>
+            <div 
+              ref={sceneRef}
+              className="scene" 
+              style={{
+                width: '100%',
+                height: '100%',
+                transformStyle: 'preserve-3d',
+                transform: sceneTransform,
+                transition: 'transform 0.5s var(--easing)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                position: 'relative'
+              }}
+            >
+              <div className="carousel" style={{
+                position: 'relative',
+                width: '100%',
+                height: '100%',
+                transformStyle: 'preserve-3d',
+                transform: `translateZ(-400px) rotateY(${theta}deg)`,
+                transition: 'transform 0.8s var(--easing)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                {data.map((item, idx) => (
+                  <CarouselItem
+                    key={idx}
+                    item={item}
+                    index={idx}
+                    theta={theta}
+                    totalItems={data.length}
+                    onClick={() => handleItemClick(idx)}
+                    isActive={idx === getActiveIndex()}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <header style={{
+              position: 'absolute',
+              top: '2rem',
+              left: '3rem',
+              right: '3rem',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              zIndex: 100,
+              pointerEvents: 'auto'
+            }}>
+              <a href="/" style={{ display: 'flex', alignItems: 'center' }}>
+                <svg width="156" height="24" viewBox="0 0 156 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M9.93363 0C10.1479 2.50039e-06 10.3421 0.12272 10.4287 0.3125L13.544 7.13281C13.7341 7.54907 14.3432 7.54907 14.5332 7.13281L17.6485 0.3125C17.7351 0.122718 17.9293 0 18.1436 0H27.1377C27.5207 8.74289e-05 27.782 0.374478 27.6397 0.71875L18.1455 23.6709C18.0632 23.8696 17.8647 23.9999 17.6436 24H10.4336C10.2125 24 10.014 23.8696 9.93167 23.6709L0.437533 0.71875C0.29523 0.37446 0.556512 5.78647e-05 0.939486 0H9.93363ZM38.5655 0C38.8644 0 39.1075 0.234912 39.1075 0.524414V23.4756C39.1075 23.7651 38.8644 24 38.5655 24H29.2149C28.9161 23.9998 28.6739 23.7649 28.6739 23.4756V0.524414C28.6739 0.235058 28.9161 0.000236908 29.2149 0H38.5655ZM101.152 0C101.451 0.000189651 101.693 0.235029 101.693 0.524414V14.0225C101.694 14.3118 101.936 14.5468 102.234 14.5469L107.699 13.5518C108.008 13.5224 108.241 13.7867 108.241 14.0762V23.4756C108.241 23.7651 107.998 24 107.699 24H91.125C90.8261 24 90.584 23.7651 90.584 23.4756V0.524414C90.584 0.234912 90.8261 -8.40768e-10 91.125 0H101.152ZM127.459 0C127.758 0.000202487 128 0.235037 128 0.524414V6.57031C128 6.85969 127.758 7.09452 127.459 7.09473H118.578C118.279 7.09473 118.037 7.32964 118.037 7.61914V8.14062C118.037 8.43013 118.279 8.66504 118.578 8.66504H125.904C126.203 8.66504 126.445 8.89995 126.445 9.18945V14.8105C126.445 15.1 126.203 15.335 125.904 15.335H118.578C118.279 15.335 118.037 15.5699 118.037 15.8594V16.3809C118.037 16.6704 118.279 16.9053 118.578 16.9053H127.459C127.758 16.9055 128 17.1403 128 17.4297V23.4756C128 23.765 127.758 23.9998 127.459 24H110.175C109.876 24 109.634 23.7651 109.634 23.4756V0.524414C109.634 0.234912 109.876 0 110.175 0H127.459ZM62.1836 0.0146484C62.623 0.0146843 62.9795 0.371252 62.9795 0.810547V6.88965C62.9795 7.32894 62.623 7.68551 62.1836 7.68555H49.6641C49.2248 7.68555 48.8683 8.04127 48.8682 8.48047V13.4561C48.8682 13.8954 49.2247 14.252 49.6641 14.252H52.7285C53.1678 14.2518 53.5235 13.8953 53.5235 13.4561V9.44824C53.5237 8.96103 53.9587 8.58818 54.4405 8.66211L63.4746 10.0488C63.8627 10.1086 64.1494 10.4424 64.1494 10.835V23.1895C64.1494 23.6288 63.793 23.9853 63.3535 23.9854H41.295C40.8556 23.9853 40.4991 23.6287 40.4991 23.1895V0.810547C40.4991 0.37127 40.8556 0.0147147 41.295 0.0146484H62.1836ZM87.2256 0.0146484C87.665 0.0146534 88.0215 0.371233 88.0215 0.810547V6.88965C88.0215 7.32896 87.665 7.68554 87.2256 7.68555H74.7061C74.2668 7.68555 73.9103 8.04127 73.9102 8.48047V13.4561C73.9102 13.8954 74.2667 14.252 74.7061 14.252H77.7705C78.2099 14.2518 78.5664 13.8953 78.5664 13.4561V9.44824C78.5667 8.96103 79.0007 8.58818 79.4825 8.66211L88.5166 10.0488C88.9047 10.1086 89.1914 10.4424 89.1914 10.835V23.1895C89.1914 23.6288 88.835 23.9854 88.3955 23.9854H66.3369C65.8976 23.9853 65.541 23.6287 65.541 23.1895V0.810547C65.541 0.371289 65.8976 0.0147456 66.3369 0.0146484H87.2256Z" fill="#FAFAFA"/>
+                  <path d="M132 12C132 5.37258 137.373 0 144 0C150.627 0 156 5.37258 156 12V20.6156C156 22.4848 154.485 24 152.616 24H135.384C133.515 24 132 22.4848 132 20.6156V12Z" fill="#A0F900"/>
+                  <path d="M141.162 12.9135L141.568 13.5334C142.119 14.3731 141.164 15.3834 140.294 14.8814C138.312 13.7372 137.633 11.2028 138.778 9.2208C139.278 8.35348 140.606 8.74643 140.555 9.74657L140.514 10.5209C140.471 11.367 140.697 12.205 141.162 12.9135Z" fill="#283E00"/>
+                  <path d="M137.043 14.0044L137.442 14.6203C137.983 15.4546 137.032 16.4669 136.173 15.971C134.215 14.8407 133.555 12.3176 134.7 10.3356C135.201 9.4683 136.514 9.85305 136.458 10.8504L136.414 11.6226C136.366 12.4663 136.586 13.3006 137.043 14.0044Z" fill="#283E00"/>
+                  <path d="M140.977 17.0523L139.508 17.797C137.518 18.8057 138.232 21.8238 140.461 21.8238C145.54 21.8238 149.658 17.6833 149.658 12.5758C149.658 10.3408 146.669 9.61819 145.659 11.609L144.877 13.1504C144.022 14.8345 142.656 16.2012 140.977 17.0523Z" fill="#283E00"/>
+                  <path d="M146.527 12.4362C147.278 12.8696 147.535 13.8295 147.102 14.5802C146.668 15.3309 145.708 15.5881 144.958 15.1547L143.968 14.5834C144.314 14.1382 144.618 13.6588 144.876 13.1504L145.531 11.861L146.527 12.4362Z" fill="#FAFAFA"/>
+                </svg>
+              </a>
+              <nav style={{
+                display: 'flex',
+                gap: '2rem'
+              }}>
+                <a href="#" className="nav-link" style={{
+                  textDecoration: 'none',
+                  color: 'rgba(255, 255, 255, 0.6)',
+                  fontSize: '0.8rem',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.1em',
+                  transition: 'color 0.3s',
+                  position: 'relative'
+                }}>Collection</a>
+                <a href="#" className="nav-link" style={{
+                  textDecoration: 'none',
+                  color: 'rgba(255, 255, 255, 0.6)',
+                  fontSize: '0.8rem',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.1em',
+                  transition: 'color 0.3s',
+                  position: 'relative'
+                }}>Artists</a>
+                <a href="#" className="nav-link" style={{
+                  textDecoration: 'none',
+                  color: 'rgba(255, 255, 255, 0.6)',
+                  fontSize: '0.8rem',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.1em',
+                  transition: 'color 0.3s',
+                  position: 'relative'
+                }}>About</a>
+              </nav>
+            </header>
+
+            <div className="details-panel" style={{
+              pointerEvents: 'auto',
+              width: '350px',
+              background: 'rgba(10, 10, 10, 0.6)',
+              backdropFilter: 'blur(10px)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              padding: '2rem',
+              position: 'absolute',
+              left: '3rem',
+              bottom: '3rem',
+              transformStyle: 'preserve-3d',
+              transition: 'border-color 0.5s var(--easing), opacity 0.2s',
+              opacity: panelOpacity
+            }}>
+              <div className="mono-label" style={{
+                fontFamily: "'Courier New', Courier, monospace",
+                fontSize: '0.7rem',
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                color: 'rgba(255, 255, 255, 0.5)',
+                marginBottom: '0.5rem'
+              }}>Subject 001</div>
+              <h2 style={{
+                fontWeight: 400,
+                fontSize: '1.5rem',
+                letterSpacing: '-0.01em'
+              }}>{currentItem.name}</h2>
+              <div className="stats-grid" style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '1rem',
+                marginTop: '2rem',
+                borderTop: '1px solid rgba(255,255,255,0.1)',
+                paddingTop: '1rem'
+              }}>
+                <div className="stat-item">
+                  <h4 style={{
+                    fontSize: '0.7rem',
+                    color: 'rgba(255,255,255,0.4)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    marginBottom: '0.5rem'
+                  }}>Poly Count</h4>
+                  <span style={{
+                    fontSize: '1rem',
+                    fontWeight: 500
+                  }}>{currentItem.poly}</span>
+                </div>
+                <div className="stat-item">
+                  <h4 style={{
+                    fontSize: '0.7rem',
+                    color: 'rgba(255,255,255,0.4)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    marginBottom: '0.5rem'
+                  }}>Material</h4>
+                  <span style={{
+                    fontSize: '1rem',
+                    fontWeight: 500
+                  }}>{currentItem.mat}</span>
+                </div>
+                <div className="stat-item">
+                  <h4 style={{
+                    fontSize: '0.7rem',
+                    color: 'rgba(255,255,255,0.4)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    marginBottom: '0.5rem'
+                  }}>Rigging</h4>
+                  <span style={{
+                    fontSize: '1rem',
+                    fontWeight: 500
+                  }}>{currentItem.rig}</span>
+                </div>
+                <div className="stat-item">
+                  <h4 style={{
+                    fontSize: '0.7rem',
+                    color: 'rgba(255,255,255,0.4)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    marginBottom: '0.5rem'
+                  }}>Format</h4>
+                  <span style={{
+                    fontSize: '1rem',
+                    fontWeight: 500
+                  }}>.FBX / .OBJ</span>
+                </div>
+              </div>
+              <br />
+              <p style={{
+                fontSize: '0.9rem',
+                lineHeight: 1.6,
+                color: 'rgba(255, 255, 255, 0.7)',
+                maxWidth: '300px'
+              }}>{currentItem.desc}</p>
+              <button className="cta-btn" style={{
+                marginTop: '2rem',
+                background: 'transparent',
+                border: '1px solid white',
+                color: 'white',
+                padding: '1rem 2rem',
+                textTransform: 'uppercase',
+                fontSize: '0.8rem',
+                letterSpacing: '0.1em',
+                cursor: 'pointer',
+                transition: 'all 0.3s var(--easing)',
+                position: 'relative',
+                overflow: 'hidden'
+              }}>Inspect Model</button>
+            </div>
+
+            <div className="controls" style={{
+              position: 'absolute',
+              bottom: '3rem',
+              right: '3rem',
+              display: 'flex',
+              gap: '1rem',
+              pointerEvents: 'auto'
+            }}>
+              <button 
+                className="control-btn" 
+                onClick={() => rotateCarousel(-1)}
+                style={{
+                  width: '50px',
+                  height: '50px',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'transparent',
+                  color: 'white',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s',
+                  fontSize: '1.2rem'
+                }}
+              >←</button>
+              <button 
+                className="control-btn" 
+                onClick={() => rotateCarousel(1)}
+                style={{
+                  width: '50px',
+                  height: '50px',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'transparent',
+                  color: 'white',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s',
+                  fontSize: '1.2rem'
+                }}
+              >→</button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const App = () => {
+      useEffect(() => {
+        const styleSheet = document.createElement('style');
+        styleSheet.textContent = `
+          * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+          }
+          
+          body {
+            margin: 0;
+            padding: 0;
+          }
+
+          .nav-link:hover {
+            color: white !important;
+            text-shadow: 0 0 5px rgba(255,255,255,0.5);
+          }
+
+          .control-btn:hover {
+            background: #B8FF38 !important;
+            color: #283E00 !important;
+            border-color: #B8FF38 !important;
+          }
+
+          .cta-btn:hover {
+            background: #B8FF38 !important;
+            color: #283E00 !important;
+            box-shadow: 0 0 20px rgba(184, 255, 56, 0.3);
+          }
+
+          .details-panel:hover {
+            border-color: rgba(184, 255, 56, 0.4) !important;
+          }
+
+          .details-panel::before {
+            content: '';
+            position: absolute;
+            inset: -1px;
+            background: 
+              linear-gradient(
+                var(--gradient-angle, 45deg),
+                rgba(184, 255, 56, 0.3),
+                transparent 40%,
+                rgba(120, 200, 30, 0.2) 50%,
+                transparent 60%,
+                rgba(184, 255, 56, 0.3)
+              );
+            background-size: 200% 200%;
+            z-index: -1;
+            opacity: 0;
+            transition: opacity 0.5s;
+            filter: url(#noise);
+          }
+
+          .details-panel:hover::before {
+            opacity: 1;
+            animation: gradientShift 4s ease-in-out infinite, gradientAngle 8s linear infinite;
+          }
+
+          @keyframes gradientShift {
+            0%, 100% {
+              background-position: 0% 50%;
+            }
+            50% {
+              background-position: 100% 50%;
+            }
+          }
+
+          @keyframes gradientAngle {
+            0% {
+              --gradient-angle: 45deg;
+              filter: blur(0px) brightness(1);
+            }
+            25% {
+              filter: blur(1px) brightness(1.1);
+            }
+            50% {
+              --gradient-angle: 225deg;
+              filter: blur(0px) brightness(1);
+            }
+            75% {
+              filter: blur(1px) brightness(0.9);
+            }
+            100% {
+              --gradient-angle: 405deg;
+              filter: blur(0px) brightness(1);
+            }
+          }
+
+          @property --gradient-angle {
+            syntax: '<angle>';
+            initial-value: 45deg;
+            inherits: false;
+          }
+
+          .details-panel::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+            opacity: 0;
+            mix-blend-mode: overlay;
+            pointer-events: none;
+            transition: opacity 0.5s;
+          }
+
+          .details-panel:hover::after {
+            opacity: 0.15;
+            animation: noiseMove 0.5s steps(2) infinite;
+          }
+
+          @keyframes noiseMove {
+            0% { transform: translate(0, 0); }
+            50% { transform: translate(-2px, -2px); }
+            100% { transform: translate(2px, 1px); }
+          }
+        `;
+        document.head.appendChild(styleSheet);
+
+        return () => {
+          document.head.removeChild(styleSheet);
+        };
+      }, []);
+
+      return <HomePage />;
+    };
+
+    // Render the app
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
