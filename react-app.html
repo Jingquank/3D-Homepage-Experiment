@@ -418,7 +418,132 @@
         height: typeof window !== 'undefined' ? window.innerHeight : 1080
       }));
       const [panelRect, setPanelRect] = useState(null);
+      const mouseRef = useRef({ x: -1e5, y: -1e5 });
+      const canvasRef = useRef(null);
       const detailsPanelRef = useRef(null);
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const GRID_STEP = 20;
+        const LINE_COLOR = 'rgba(34, 197, 94, 0.15)';
+        const DOT_COLOR = 'rgba(16, 185, 129, 0.18)';
+        const WARP_STRENGTH = 120;
+        const WARP_RADIUS = 380;
+        const IDLE_STRENGTH = 38;
+        const IDLE_RADIUS = 420;
+        const IDLE_ORBIT_RADIUS_X = 140;
+        const IDLE_ORBIT_RADIUS_Y = 90;
+        const IDLE_SPEED = 0.28;
+        const AMBIENT_IDLE_STRENGTH = 52;
+        const AMBIENT_IDLE_BLEND = 0.85;
+        const AMBIENT_IDLE_RADIUS = 900;
+
+        const draw = () => {
+          const w = window.innerWidth;
+          const h = window.innerHeight;
+          if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
+          }
+          ctx.clearRect(0, 0, w, h);
+
+          const isIdle = mouseRef.current.x < -1e4;
+          const t = performance.now() * 0.001;
+          const idleTargetX = w / 2 + Math.cos(t * IDLE_SPEED) * IDLE_ORBIT_RADIUS_X;
+          const idleTargetY = h / 2 + Math.sin(t * IDLE_SPEED * 1.15) * IDLE_ORBIT_RADIUS_Y;
+          const targetX = isIdle ? idleTargetX : mouseRef.current.x;
+          const targetY = isIdle ? idleTargetY : mouseRef.current.y;
+          const strength = isIdle ? IDLE_STRENGTH : WARP_STRENGTH;
+          const radius = isIdle ? IDLE_RADIUS : WARP_RADIUS;
+
+          const warp = (px, py) => {
+            const dx = targetX - px;
+            const dy = targetY - py;
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+            const falloff = Math.exp(-(dist * dist) / (2 * radius * radius));
+            const s = strength * falloff;
+            const mainX = px + (dx / dist) * s;
+            const mainY = py + (dy / dist) * s;
+            if (isIdle) return { x: mainX, y: mainY };
+            const idleDx = idleTargetX - px;
+            const idleDy = idleTargetY - py;
+            const idleDist = Math.sqrt(idleDx * idleDx + idleDy * idleDy) || 1;
+            const idleFalloff = Math.exp(-(idleDist * idleDist) / (2 * AMBIENT_IDLE_RADIUS * AMBIENT_IDLE_RADIUS));
+            const idleS = AMBIENT_IDLE_STRENGTH * idleFalloff * AMBIENT_IDLE_BLEND;
+            return {
+              x: mainX + (idleDx / idleDist) * idleS,
+              y: mainY + (idleDy / idleDist) * idleS
+            };
+          };
+
+          const margin = 80;
+          const xMin = -margin;
+          const xMax = w + margin;
+          const yMin = -margin;
+          const yMax = h + margin;
+
+          ctx.strokeStyle = LINE_COLOR;
+          ctx.lineWidth = 1;
+
+          for (let x = xMin; x <= xMax; x += GRID_STEP) {
+            ctx.beginPath();
+            let first = true;
+            for (let y = yMin; y <= yMax; y += GRID_STEP) {
+              const { x: wx, y: wy } = warp(x, y);
+              if (first) { ctx.moveTo(wx, wy); first = false; }
+              else ctx.lineTo(wx, wy);
+            }
+            ctx.stroke();
+          }
+          for (let y = yMin; y <= yMax; y += GRID_STEP) {
+            ctx.beginPath();
+            let first = true;
+            for (let x = xMin; x <= xMax; x += GRID_STEP) {
+              const { x: wx, y: wy } = warp(x, y);
+              if (first) { ctx.moveTo(wx, wy); first = false; }
+              else ctx.lineTo(wx, wy);
+            }
+            ctx.stroke();
+          }
+
+          ctx.fillStyle = DOT_COLOR;
+          for (let ox = -80; ox <= xMax + 80; ox += 40) {
+            for (let oy = -80; oy <= yMax + 80; oy += 40) {
+              for (const [dx, dy] of [[20, 20], [40, 40]]) {
+                const px = ox + dx;
+                const py = oy + dy;
+                const { x: wx, y: wy } = warp(px, py);
+                ctx.beginPath();
+                ctx.arc(wx, wy, 2, 0, Math.PI * 2);
+                ctx.fill();
+              }
+            }
+          }
+        };
+
+        const handleMouseMove = (e) => {
+          mouseRef.current = { x: e.clientX, y: e.clientY };
+        };
+        const handleMouseLeave = () => {
+          mouseRef.current = { x: -1e5, y: -1e5 };
+        };
+
+        let rafId;
+        const tick = () => {
+          draw();
+          rafId = requestAnimationFrame(tick);
+        };
+        tick();
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseleave', handleMouseLeave);
+        return () => {
+          window.removeEventListener('mousemove', handleMouseMove);
+          window.removeEventListener('mouseleave', handleMouseLeave);
+          cancelAnimationFrame(rafId);
+        };
+      }, []);
 
       const setDetailsPanelRef = useCallback((el) => {
         detailsPanelRef.current = el;
@@ -485,6 +610,19 @@
               inset: 0,
               zIndex: 0,
               background: 'radial-gradient(125% 125% at 50% 10%, #000000 40%, #072607 100%)'
+            }}
+          />
+
+          {/* Circuit Board - warped by mouse */}
+          <canvas
+            ref={canvasRef}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              zIndex: 1,
+              pointerEvents: 'none'
             }}
           />
 
